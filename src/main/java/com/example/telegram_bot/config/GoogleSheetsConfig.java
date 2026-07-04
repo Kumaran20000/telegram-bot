@@ -8,26 +8,33 @@ import com.google.auth.oauth2.GoogleCredentials;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.io.FileInputStream;
+import java.io.InputStream;
 import java.util.List;
 
 @Configuration
 public class GoogleSheetsConfig {
 
     private static final String APPLICATION_NAME = "Affiliate Bot";
-    private static final String CREDENTIALS_FILE = "src/main/resources/credentials.json";
 
     @Bean
     public Sheets sheetsService() throws Exception {
 
+        InputStream stream =
+                getClass().getClassLoader().getResourceAsStream("credentials.json");
+
+        if (stream == null) {
+            throw new RuntimeException("credentials.json not found in classpath");
+        }
+
         GoogleCredentials credentials = GoogleCredentials
-                .fromStream(new FileInputStream(CREDENTIALS_FILE))
+                .fromStream(stream)
                 .createScoped(List.of("https://www.googleapis.com/auth/spreadsheets"));
 
         return new Sheets.Builder(
                 GoogleNetHttpTransport.newTrustedTransport(),
                 GsonFactory.getDefaultInstance(),
                 new HttpCredentialsAdapter(credentials)
-        ).setApplicationName(APPLICATION_NAME).build();
+        ).setApplicationName(APPLICATION_NAME)
+         .build();
     }
 }
