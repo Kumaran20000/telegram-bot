@@ -8,7 +8,9 @@ import com.google.auth.oauth2.GoogleCredentials;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Configuration
@@ -19,22 +21,46 @@ public class GoogleSheetsConfig {
     @Bean
     public Sheets sheetsService() throws Exception {
 
-        InputStream stream =
-                getClass().getClassLoader().getResourceAsStream("credentials.json");
+        GoogleCredentials credentials;
 
-        if (stream == null) {
-            throw new RuntimeException("credentials.json not found in classpath");
+        // 1. Try Railway Environment Variable
+        String credentialsJson = System.getenv("GOOGLE_CREDENTIALS_JSON");
+
+        if (credentialsJson != null && !credentialsJson.isBlank()) {
+
+            InputStream stream = new ByteArrayInputStream(
+                    credentialsJson.getBytes(StandardCharsets.UTF_8));
+
+            credentials = GoogleCredentials.fromStream(stream)
+                    .createScoped(List.of("https://www.googleapis.com/auth/spreadsheets"));
+
+            System.out.println("Loaded Google credentials from Railway Environment Variable.");
+
+        } else {
+
+            // 2. Fallback to local credentials.json
+            InputStream stream = getClass()
+                    .getClassLoader()
+                    .getResourceAsStream("credentials.json");
+
+            if (stream == null) {
+                throw new RuntimeException(
+                        "Google credentials not found. " +
+                        "Set GOOGLE_CREDENTIALS on Railway or add credentials.json locally."
+                );
+            }
+
+            credentials = GoogleCredentials.fromStream(stream)
+                    .createScoped(List.of("https://www.googleapis.com/auth/spreadsheets"));
+
+            System.out.println("Loaded Google credentials from local credentials.json.");
         }
-
-        GoogleCredentials credentials = GoogleCredentials
-                .fromStream(stream)
-                .createScoped(List.of("https://www.googleapis.com/auth/spreadsheets"));
 
         return new Sheets.Builder(
                 GoogleNetHttpTransport.newTrustedTransport(),
                 GsonFactory.getDefaultInstance(),
-                new HttpCredentialsAdapter(credentials)
-        ).setApplicationName(APPLICATION_NAME)
-         .build();
+                new HttpCredentialsAdapter(credentials))
+                .setApplicationName(APPLICATION_NAME)
+                .build();
     }
 }
