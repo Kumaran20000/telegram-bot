@@ -1,5 +1,6 @@
 package com.example.telegram_bot.scheduler;
 
+import java.time.LocalDateTime;
 
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -15,13 +16,30 @@ public class PostScheduler {
         this.googleSheetService = googleSheetService;
     }
 
-    @Scheduled(fixedRate = 300000)
+     @Scheduled(fixedRate = 300000)
     public void run() {
 
         try {
-            googleSheetService.processSheet();
+
+            System.out.println("========================================");
+            System.out.println("Scheduler Started");
+            System.out.println("Time : " + LocalDateTime.now());
+            System.out.println("Checking Google Sheet for NEW deals...");
+            System.out.println("========================================");
+
+            // Process ONLY ONE deal
+            googleSheetService.processNextDeal();
+
+            System.out.println("========================================");
+            System.out.println("Scheduler Finished");
+            System.out.println("Waiting for next schedule...");
+            System.out.println("========================================");
+
         } catch (Exception e) {
-            System.out.println("Scheduler error: " + e.getMessage());
+
+            System.out.println("Scheduler Error: " + e.getMessage());
+
+            e.printStackTrace();
         }
     }
 }
