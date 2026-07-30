@@ -113,16 +113,27 @@ public class VideoGenerationService {
         Java2DFrameConverter converter = new Java2DFrameConverter();
         Frame frame = converter.convert(canvas);
 
-        FFmpegFrameRecorder recorder = new FFmpegFrameRecorder(output, 1080, 1920);
+        FFmpegFrameRecorder recorder = new FFmpegFrameRecorder(output, 1080, 1920, 1);
         recorder.setFormat("mp4");
+        recorder.setVideoCodec(org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264);
+        recorder.setPixelFormat(org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_YUV420P);
         recorder.setFrameRate(30);
-        recorder.setVideoBitrate(2_000_000);
+        recorder.setVideoBitrate(2_500_000);
+        recorder.setVideoOption("preset", "ultrafast");
+        recorder.setOption("movflags", "+faststart");
+
+        // Audio settings (Silent AAC track required by Instagram Reel video transcoders)
+        recorder.setAudioCodec(org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_AAC);
+        recorder.setAudioBitrate(128000);
+        recorder.setSampleRate(44100);
 
         recorder.start();
 
-        // 5-second video (150 frames @ 30 FPS)
+        // 5-second video (150 frames @ 30 FPS) with silent AAC audio samples
+        short[] silentAudio = new short[1470]; // 44100 / 30 = 1470 samples per frame
         for (int i = 0; i < 150; i++) {
             recorder.record(frame);
+            recorder.recordSamples(java.nio.ShortBuffer.wrap(silentAudio));
         }
 
         recorder.stop();

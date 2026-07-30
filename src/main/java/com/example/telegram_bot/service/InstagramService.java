@@ -212,6 +212,7 @@ public class InstagramService {
                     if ("FINISHED".equalsIgnoreCase(statusCode)) {
                         return true;
                     } else if ("ERROR".equalsIgnoreCase(statusCode) || "EXPIRED".equalsIgnoreCase(statusCode)) {
+                        System.out.println("❌ Meta Reel Processing Error Details: " + response.getBody());
                         return false;
                     }
                 }
