@@ -42,10 +42,14 @@ public class CategoryService {
             return ProductCategory.TV;
         }
 
-        // Audio
+        // Audio / Bluetooth
         if (product.contains("earbuds")
                 || product.contains("headphone")
-                || product.contains("earphone")) {
+                || product.contains("earphone")
+                || product.contains("bluetooth")
+                || product.contains("tws")
+                || product.contains("neckband")
+                || product.contains("airpods")) {
 
             return ProductCategory.HEADPHONE;
         }

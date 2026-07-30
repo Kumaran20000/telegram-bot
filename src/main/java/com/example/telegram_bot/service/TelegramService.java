@@ -50,4 +50,48 @@ public class TelegramService {
             return false;
         }
     }
+
+    /**
+     * Sends a carousel media group (photo album) of up to 10 product deals to Telegram.
+     */
+    public boolean sendMediaGroup(java.util.List<com.example.telegram_bot.model.Deal> deals, String caption) {
+        try {
+            String url = "https://api.telegram.org/bot" + token + "/sendMediaGroup";
+
+            java.util.List<java.util.Map<String, Object>> mediaList = new java.util.ArrayList<>();
+            for (int i = 0; i < deals.size() && i < 10; i++) {
+                com.example.telegram_bot.model.Deal deal = deals.get(i);
+                if (deal.getImage() == null || !deal.getImage().startsWith("http")) continue;
+
+                java.util.Map<String, Object> item = new java.util.HashMap<>();
+                item.put("type", "photo");
+                item.put("media", deal.getImage());
+                if (i == 0 && caption != null) {
+                    item.put("caption", caption);
+                    item.put("parse_mode", "HTML");
+                }
+                mediaList.add(item);
+            }
+
+            if (mediaList.isEmpty()) {
+                return false;
+            }
+
+            java.util.Map<String, Object> body = new java.util.HashMap<>();
+            body.put("chat_id", chatId);
+            body.put("media", mediaList);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<java.util.Map<String, Object>> request = new HttpEntity<>(body, headers);
+            restTemplate.postForObject(url, request, String.class);
+            System.out.println("Successfully sent Telegram Carousel Media Group (" + mediaList.size() + " items)");
+            return true;
+
+        } catch (Exception e) {
+            System.out.println("Telegram MediaGroup Error: " + e.getMessage());
+            return false;
+        }
+    }
 }
