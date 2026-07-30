@@ -220,7 +220,7 @@ public class AmazonSiteStripeService {
             System.err.println("Invalid Amazon URL provided: [" + amazonUrl + "]");
             deal.setTitle("Amazon Deal");
             deal.setPrice("N/A");
-            deal.setImage("https://via.placeholder.com/500?text=Amazon+Deal");
+            deal.setImage("https://dummyimage.com/600x600/ffffff/000000.jpg&text=Amazon+Deal");
             return deal;
         }
 
@@ -260,7 +260,7 @@ public class AmazonSiteStripeService {
                 deal.setPrice("N/A");
             }
             if (deal.getImage() == null || deal.getImage().isEmpty()) {
-                deal.setImage("https://via.placeholder.com/500?text=Amazon+Deal");
+                deal.setImage("https://dummyimage.com/600x600/ffffff/000000.jpg&text=Amazon+Deal");
             }
         }
 
@@ -449,6 +449,6 @@ public class AmazonSiteStripeService {
             return imgBlk.attr("src");
         }
 
-        return "https://via.placeholder.com/500?text=Amazon+Product";
+        return "https://dummyimage.com/600x600/ffffff/000000.jpg&text=Amazon+Product";
     }
 }

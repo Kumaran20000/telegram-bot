@@ -143,15 +143,15 @@ public class InstagramService {
     private String createMediaContainer(Deal deal, String imageUrl) {
         String url = "https://graph.facebook.com/v23.0/" + instagramConfig.getBusinessId() + "/media";
 
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("image_url", imageUrl);
-        body.add("caption", captionService.createCaption(deal));
-        body.add("access_token", instagramConfig.getAccessToken());
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("image_url", imageUrl);
+        body.put("caption", captionService.createCaption(deal));
+        body.put("access_token", instagramConfig.getAccessToken());
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
         try {
             ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
 
@@ -171,16 +171,16 @@ public class InstagramService {
     private String createReelMediaContainer(Deal deal, String videoUrl) {
         String url = "https://graph.facebook.com/v23.0/" + instagramConfig.getBusinessId() + "/media";
 
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("media_type", "REELS");
-        body.add("video_url", videoUrl);
-        body.add("caption", captionService.createCaption(deal));
-        body.add("access_token", instagramConfig.getAccessToken());
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("media_type", "REELS");
+        body.put("video_url", videoUrl);
+        body.put("caption", captionService.createCaption(deal));
+        body.put("access_token", instagramConfig.getAccessToken());
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
         try {
             ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
 
