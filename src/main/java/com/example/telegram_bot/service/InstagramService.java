@@ -33,14 +33,15 @@ public class InstagramService {
         System.out.println("Access Token: " + instagramConfig.getAccessToken());
 
         try {
-            System.out.println("Starting Instagram Image upload with URL: " + imageUrl);
+            String targetImageUrl = getProxiedImageUrl(imageUrl);
+            System.out.println("Starting Instagram Image upload with URL: " + targetImageUrl);
 
-            if (!isValidInstagramAspectRatio(imageUrl)) {
-                System.out.println("❌ Skipping Instagram upload: Image aspect ratio is not supported by Instagram (must be between 0.80 and 1.91).");
+            if (!isValidInstagramAspectRatio(targetImageUrl)) {
+                System.out.println("❌ Skipping Instagram upload: Image aspect ratio is not supported by Instagram.");
                 return false;
             }
 
-            String creationId = createMediaContainer(deal, imageUrl);
+            String creationId = createMediaContainer(deal, targetImageUrl);
 
             if (creationId == null) {
                 System.out.println("Failed to create Instagram media container");
@@ -63,6 +64,24 @@ public class InstagramService {
             e.printStackTrace();
             return false;
         }
+    }
+
+    /**
+     * Proxies Amazon product image URLs through images.weserv.nl to bypass CloudFront User-Agent blocking of Meta's Instagram crawler.
+     */
+    public String getProxiedImageUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.trim().isEmpty()) {
+            return "https://dummyimage.com/600x600/ffffff/000000.jpg&text=Amazon+Deal";
+        }
+        String url = rawUrl.trim();
+        if (url.contains("dummyimage.com") || url.contains("weserv.nl")) {
+            return url;
+        }
+        if (url.contains("amazon.com") || url.contains("amazon.in") || url.contains("media-amazon.com") || url.contains("ssl-images-amazon")) {
+            String clean = url.replace("https://", "").replace("http://", "");
+            return "https://images.weserv.nl/?url=" + clean + "&output=jpg";
+        }
+        return url;
     }
 
     /**
