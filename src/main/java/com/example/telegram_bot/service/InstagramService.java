@@ -66,22 +66,31 @@ public class InstagramService {
         }
     }
 
+    public String cleanAmazonImageUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.trim().isEmpty()) {
+            return "https://dummyimage.com/600x600/ffffff/000000.jpg&text=Amazon+Deal";
+        }
+        String cleaned = rawUrl.trim();
+        // Remove dynamic sizing modifiers like ._SL1500_ ._AC_UL320_ ._SX..._ ._SY..._
+        cleaned = cleaned.replaceAll("\\._[A-Za-z0-9_,-]+\\.(jpg|jpeg|png)", ".$1");
+        return cleaned;
+    }
+
     /**
-     * Proxies Amazon product image URLs through images.weserv.nl to bypass CloudFront User-Agent blocking of Meta's Instagram crawler.
+     * Cleans dynamic size modifiers and proxies Amazon product image URLs through wsrv.nl to bypass CloudFront User-Agent blocking of Meta's Instagram crawler.
      */
     public String getProxiedImageUrl(String rawUrl) {
         if (rawUrl == null || rawUrl.trim().isEmpty()) {
             return "https://dummyimage.com/600x600/ffffff/000000.jpg&text=Amazon+Deal";
         }
-        String url = rawUrl.trim();
-        if (url.contains("dummyimage.com") || url.contains("weserv.nl")) {
-            return url;
+        String cleanUrl = cleanAmazonImageUrl(rawUrl);
+        if (cleanUrl.contains("dummyimage.com") || cleanUrl.contains("wsrv.nl") || cleanUrl.contains("weserv.nl")) {
+            return cleanUrl;
         }
-        if (url.contains("amazon.com") || url.contains("amazon.in") || url.contains("media-amazon.com") || url.contains("ssl-images-amazon")) {
-            String clean = url.replace("https://", "").replace("http://", "");
-            return "https://images.weserv.nl/?url=" + clean + "&output=jpg";
+        if (cleanUrl.contains("amazon.com") || cleanUrl.contains("amazon.in") || cleanUrl.contains("media-amazon.com") || cleanUrl.contains("ssl-images-amazon")) {
+            return "https://wsrv.nl/?url=" + cleanUrl;
         }
-        return url;
+        return cleanUrl;
     }
 
     /**

@@ -419,7 +419,22 @@ public class AmazonSiteStripeService {
         return cleaned.isEmpty() ? priceRaw : cleaned;
     }
 
+    public String cleanAmazonImageUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.trim().isEmpty()) {
+            return "https://dummyimage.com/600x600/ffffff/000000.jpg&text=Amazon+Product";
+        }
+        String cleaned = rawUrl.trim();
+        // Strip out dynamic sizing modifiers like ._SL1500_ ._AC_UL320_ ._SX..._ ._SY..._
+        cleaned = cleaned.replaceAll("\\._[A-Za-z0-9_,-]+\\.(jpg|jpeg|png)", ".$1");
+        return cleaned;
+    }
+
     private String extractImage(Document doc) {
+        String raw = extractRawImage(doc);
+        return cleanAmazonImageUrl(raw);
+    }
+
+    private String extractRawImage(Document doc) {
         // High resolution image from landingImage
         Element mainImg = doc.getElementById("landingImage");
         if (mainImg != null) {
