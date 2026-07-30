@@ -17,6 +17,7 @@ public class GoogleSheetService {
     private final TelegramService telegramService;
     private final InstagramService instagramService;
     private final VideoGenerationService videoGenerationService;
+    private final MessageFormatterService messageFormatterService;
 
     @Value("${google.sheet.id}")
     private String spreadsheetId;
@@ -31,12 +32,14 @@ public class GoogleSheetService {
             Sheets sheetsService,
             TelegramService telegramService,
             InstagramService instagramService,
-            VideoGenerationService videoGenerationService) {
+            VideoGenerationService videoGenerationService,
+            MessageFormatterService messageFormatterService) {
 
         this.sheetsService = sheetsService;
         this.telegramService = telegramService;
         this.instagramService = instagramService;
         this.videoGenerationService = videoGenerationService;
+        this.messageFormatterService = messageFormatterService;
     }
 
     // Save deal into Google Sheet (Prevents duplicate entries)
@@ -205,6 +208,24 @@ public class GoogleSheetService {
                 continue;
             }
 
+            // Skip row if essential deal data is missing (title, price, image, or link)
+            boolean isTitleMissing = title.trim().isEmpty() || title.trim().equalsIgnoreCase("N/A") || title.trim().equalsIgnoreCase("Amazon Deal");
+            boolean isPriceMissing = price.trim().isEmpty() || price.trim().equalsIgnoreCase("N/A");
+            boolean isImageMissing = image.trim().isEmpty() || image.trim().equalsIgnoreCase("N/A");
+            boolean isLinkMissing = link.trim().isEmpty() || link.trim().equalsIgnoreCase("N/A");
+
+            if (isTitleMissing || isPriceMissing || isImageMissing || isLinkMissing) {
+                StringBuilder missing = new StringBuilder();
+                if (isTitleMissing) missing.append("Title ");
+                if (isPriceMissing) missing.append("Price ");
+                if (isImageMissing) missing.append("Image ");
+                if (isLinkMissing) missing.append("Link ");
+
+                System.out.println("⚠️ Skipping Row " + rowIndex + " because deal data is incomplete (Missing: " + missing.toString().trim() + ")");
+                rowIndex++;
+                continue;
+            }
+
             found = true;
 
             Deal deal = new Deal();
@@ -214,26 +235,41 @@ public class GoogleSheetService {
             deal.setLink(link);
             deal.setSource(source);
 
-            String message =
-                    "🔥 HOT DEAL ALERT\n\n"
-                    + "🛒 " + title + "\n"
-                    + "💰 Price: ₹" + price + "\n\n"
-                    + "🔗 Buy Now:\n"
-                    + link;
-
             System.out.println("------------------------------------");
             System.out.println("Posting Deal");
             System.out.println("Title : " + title);
             System.out.println("------------------------------------");
 
             if (telegramPending) {
+                String telegramHtml = messageFormatterService.formatTelegramMessage(deal);
+                String storeName = (deal.getSource() != null && !deal.getSource().trim().isEmpty()) ? deal.getSource() : "Amazon";
+                String buttonText = "🛒 Buy Now on " + storeName;
+                boolean telegramPosted = false;
 
-                boolean telegramPosted = telegramService.sendMessage(message);
+                if (deal.getImage() != null && deal.getImage().startsWith("http")) {
+                    telegramPosted = telegramService.sendPhotoWithButton(
+                            deal.getImage(),
+                            telegramHtml,
+                            buttonText,
+                            deal.getLink()
+                    );
+                } else {
+                    telegramPosted = telegramService.sendMessageWithButton(
+                            telegramHtml,
+                            buttonText,
+                            deal.getLink()
+                    );
+                }
 
                 if (telegramPosted) {
                     updateTelegramStatus(rowIndex, "POSTED");
                 } else {
                     updateTelegramStatus(rowIndex, "FAILED");
+                    telegramService.sendAdminNotification(
+                            "⚠️ <b>Posting Alert (Telegram)</b>\n\n" +
+                            "Failed to post deal at Row <b>" + rowIndex + "</b>:\n" +
+                            "🛒 <i>" + deal.getTitle() + "</i>"
+                    );
                 }
             }
 
@@ -271,6 +307,11 @@ public class GoogleSheetService {
                     updateInstagramStatus(rowIndex, "POSTED");
                 } else {
                     updateInstagramStatus(rowIndex, "FAILED");
+                    telegramService.sendAdminNotification(
+                            "⚠️ <b>Posting Alert (Instagram)</b>\n\n" +
+                            "Failed to publish deal to Instagram at Row <b>" + rowIndex + "</b>:\n" +
+                            "🛒 <i>" + deal.getTitle() + "</i>"
+                    );
                 }
             }
 

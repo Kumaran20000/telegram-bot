@@ -34,7 +34,7 @@ public class CarouselService {
             String link = row.size() > 3 ? row.get(3).toString().trim() : "";
             String source = row.size() > 4 ? row.get(4).toString().trim() : "Amazon";
 
-            if (title.isEmpty() || title.equalsIgnoreCase("Amazon Deal") || link.isEmpty()) {
+            if (title.isEmpty() || title.equalsIgnoreCase("Amazon Deal") || price.isEmpty() || price.equalsIgnoreCase("N/A") || image.isEmpty() || link.isEmpty()) {
                 continue;
             }
 

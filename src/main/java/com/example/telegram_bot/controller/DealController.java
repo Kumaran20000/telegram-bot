@@ -115,6 +115,28 @@ public class DealController {
     }
 
     /**
+     * Trigger daily fetch of N top deals (default 10) into Google Sheet on-demand.
+     */
+    @PostMapping("/daily-fetch")
+    public ResponseEntity<?> fetchDailyDeals(@RequestParam(defaultValue = "10") int limit) {
+        try {
+            List<Deal> deals = siteStripeService.scrapeGoldboxTopDeals("https://www.amazon.in/gp/goldbox", limit);
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "SUCCESS");
+            response.put("count", deals.size());
+            response.put("limit", limit);
+            response.put("message", "Successfully fetched and saved " + deals.size() + " daily products to Google Sheet.");
+            response.put("deals", deals);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("status", "ERROR");
+            error.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    /**
      * Scrape top N deals from Amazon Goldbox / Today's Deals (https://www.amazon.in/gp/goldbox) and save them to Google Sheet.
      */
     @PostMapping("/goldbox")

@@ -23,6 +23,9 @@ public class AmazonSiteStripeService {
 
     private final GoogleSheetService googleSheetService;
 
+    @org.springframework.beans.factory.annotation.Value("${amazon.associate.tag:}")
+    private String associateTag;
+
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
@@ -30,6 +33,23 @@ public class AmazonSiteStripeService {
 
     public AmazonSiteStripeService(GoogleSheetService googleSheetService) {
         this.googleSheetService = googleSheetService;
+    }
+
+    /**
+     * Attaches or replaces Amazon affiliate store tag (e.g. tag=yourstoreid-21) on Amazon product URLs.
+     */
+    public String attachAffiliateTag(String url) {
+        if (url == null || url.trim().isEmpty() || associateTag == null || associateTag.trim().isEmpty()) {
+            return url;
+        }
+        String tag = associateTag.trim();
+        if (url.contains("tag=")) {
+            return url.replaceAll("tag=[^&]+", "tag=" + tag);
+        } else if (url.contains("?")) {
+            return url + "&tag=" + tag;
+        } else {
+            return url + "?tag=" + tag;
+        }
     }
 
     /**
@@ -87,9 +107,15 @@ public class AmazonSiteStripeService {
             String image = row.size() > 2 ? row.get(2).toString().trim() : "";
             String link = row.size() > 3 ? row.get(3).toString().trim() : "";
 
-            // If link exists and any detail is missing or incomplete
+            // Auto-detect if user pasted URL into Title column instead of Link column
+            if (link.isEmpty() && (title.startsWith("http://") || title.startsWith("https://") || title.contains("amzn."))) {
+                link = title;
+                title = "";
+            }
+
+            // If link exists and any essential detail is missing or incomplete
             if (!link.isEmpty() && (title.isEmpty() || price.isEmpty() || image.isEmpty() || title.equalsIgnoreCase("Amazon Deal") || price.equalsIgnoreCase("N/A"))) {
-                System.out.println("Enriching Google Sheet Row " + rowIndex + " for link: " + link);
+                System.out.println("🔍 Auto-Enriching Google Sheet Row " + rowIndex + " for link: " + link);
                 String expanded = expandUrl(extractUrl(link));
                 Deal scraped = scrapeAmazonProduct(expanded);
 
@@ -101,6 +127,7 @@ public class AmazonSiteStripeService {
                 updatedDeal.setSource(row.size() > 4 && !row.get(4).toString().trim().isEmpty() ? row.get(4).toString().trim() : "Amazon");
 
                 googleSheetService.updateDealRow(rowIndex, updatedDeal);
+                System.out.println("✅ Enriched Row " + rowIndex + " -> Title: " + updatedDeal.getTitle() + " | Price: ₹" + updatedDeal.getPrice());
                 updatedCount++;
             }
             rowIndex++;
@@ -127,8 +154,9 @@ public class AmazonSiteStripeService {
                 "https://www.amazon.in/gp/movers-and-shakers"
         };
 
+        int maxCandidates = Math.max(limit * 3, 30);
         for (String source : sources) {
-            if (productUrls.size() >= limit) break;
+            if (productUrls.size() >= maxCandidates) break;
             try {
                 Document doc = Jsoup.connect(source)
                         .userAgent(USER_AGENT)
@@ -146,9 +174,9 @@ public class AmazonSiteStripeService {
                         Matcher matcher = ASIN_PATTERN.matcher(href);
                         if (matcher.find()) {
                             String asin = matcher.group(1);
-                            String cleanUrl = "https://www.amazon.in/dp/" + asin;
+                            String cleanUrl = attachAffiliateTag("https://www.amazon.in/dp/" + asin);
                             productUrls.add(cleanUrl);
-                            if (productUrls.size() >= limit) break;
+                            if (productUrls.size() >= maxCandidates) break;
                         }
                     }
                 }
@@ -158,17 +186,22 @@ public class AmazonSiteStripeService {
         }
 
         List<Deal> savedDeals = new ArrayList<>();
-        int count = 0;
         for (String url : productUrls) {
-            if (count >= limit) break;
+            if (savedDeals.size() >= limit) break;
             try {
-                System.out.println("Scraping Goldbox Deal (" + (count + 1) + "/" + limit + "): " + url);
+                System.out.println("Scraping Daily Deal candidate (" + (savedDeals.size() + 1) + "/" + limit + "): " + url);
                 Deal deal = scrapeAmazonProduct(url);
+                
+                if (googleSheetService.isDuplicateDeal(deal)) {
+                    System.out.println("⚠️ Skipping duplicate deal already in Google Sheet: " + deal.getTitle());
+                    continue;
+                }
+
                 googleSheetService.saveDeal(deal);
                 savedDeals.add(deal);
-                count++;
+                System.out.println("✅ Saved Daily Deal #" + savedDeals.size() + " -> " + deal.getTitle() + " (₹" + deal.getPrice() + ")");
             } catch (Exception e) {
-                System.err.println("Error saving Goldbox deal [" + url + "]: " + e.getMessage());
+                System.err.println("Error saving Daily deal [" + url + "]: " + e.getMessage());
             }
         }
 
@@ -206,9 +239,11 @@ public class AmazonSiteStripeService {
             String title = extractTitle(doc);
             deal.setTitle(title);
 
-            // 2. Extract Price
+            // 2. Extract Price & MRP
             String price = extractPrice(doc);
             deal.setPrice(price);
+            deal.setMrp(extractMrp(doc));
+            deal.setDiscount(extractDiscount(doc));
 
             // 3. Extract Image
             String image = extractImage(doc);
@@ -336,6 +371,42 @@ public class AmazonSiteStripeService {
         }
 
         return "N/A";
+    }
+
+    private String extractMrp(Document doc) {
+        String[] selectors = new String[]{
+                "span.a-text-price span.a-offscreen",
+                "#corePriceDisplay_desktop_feature_div .a-text-price span.a-offscreen",
+                ".basisPrice .a-offscreen",
+                "#listPrice",
+                "#priceblock_listprice",
+                "#priceblock_saleprice"
+        };
+        for (String selector : selectors) {
+            Element el = doc.selectFirst(selector);
+            if (el != null && !el.text().trim().isEmpty()) {
+                String cleaned = cleanPrice(el.text());
+                if (!cleaned.isEmpty() && !cleaned.equals("N/A")) {
+                    return cleaned;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String extractDiscount(Document doc) {
+        String[] selectors = new String[]{
+                "span.savingsPercentage",
+                "#corePriceDisplay_desktop_feature_div .savingsPercentage",
+                ".savingPriceOverride"
+        };
+        for (String selector : selectors) {
+            Element el = doc.selectFirst(selector);
+            if (el != null && !el.text().trim().isEmpty()) {
+                return el.text().trim().replaceAll("[^0-9%]", "");
+            }
+        }
+        return null;
     }
 
     private String cleanPrice(String priceRaw) {

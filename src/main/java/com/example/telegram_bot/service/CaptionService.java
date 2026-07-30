@@ -8,30 +8,13 @@ import com.example.telegram_bot.model.ProductCategory;
 @Service
 public class CaptionService {
 
-    private final CategoryService categoryService;
-    private final HashtagService hashtagService;
+    private final MessageFormatterService messageFormatterService;
 
-    public CaptionService(CategoryService categoryService,
-                          HashtagService hashtagService) {
-
-        this.categoryService = categoryService;
-        this.hashtagService = hashtagService;
+    public CaptionService(MessageFormatterService messageFormatterService) {
+        this.messageFormatterService = messageFormatterService;
     }
 
     public String createCaption(Deal deal) {
-
-        ProductCategory category =
-                categoryService.detectCategory(deal.getTitle());
-
-        String hashtags =
-                hashtagService.getHashTags(category);
-
-        return "🔥 LIMITED TIME DEAL 🔥\n\n"
-                + "🛍️ " + deal.getTitle() + "\n\n"
-                + "💰 Only ₹" + deal.getPrice() + "\n\n"
-                + "👇 Comment \"LINK\" and we'll reply with the product link.\n\n"
-                + "❤️ Follow @offerzone2538 for daily deals.\n\n"
-                + hashtags;
+        return messageFormatterService.formatInstagramCaption(deal);
     }
-
 }

@@ -22,6 +22,35 @@ public class TelegramService {
     @Value("${telegram.chat.id}")
     private String chatId;
 
+    @Value("${telegram.admin.chat.id:${telegram.chat.id}}")
+    private String adminChatId;
+
+    /**
+     * Sends administrative notifications and alert messages to the configured admin Telegram chat.
+     */
+    public boolean sendAdminNotification(String alertHtml) {
+        try {
+            String targetChat = (adminChatId != null && !adminChatId.trim().isEmpty()) ? adminChatId : chatId;
+            String url = "https://api.telegram.org/bot" + token + "/sendMessage";
+
+            java.util.Map<String, Object> body = new java.util.HashMap<>();
+            body.put("chat_id", targetChat);
+            body.put("text", alertHtml);
+            body.put("parse_mode", "HTML");
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<java.util.Map<String, Object>> request = new HttpEntity<>(body, headers);
+            restTemplate.postForObject(url, request, String.class);
+            System.out.println("🔔 Sent Admin Telegram Notification to " + targetChat);
+            return true;
+        } catch (Exception e) {
+            System.err.println("Failed to send Admin Telegram Notification: " + e.getMessage());
+            return false;
+        }
+    }
+
     public boolean sendMessage(String message) {
 
         try {
@@ -48,6 +77,80 @@ public class TelegramService {
             System.out.println("Telegram error: " + e.getMessage());
 
             return false;
+        }
+    }
+
+    /**
+     * Sends a rich photo post with HTML caption and inline action button to Telegram channel.
+     */
+    public boolean sendPhotoWithButton(String photoUrl, String captionHtml, String buttonText, String buttonUrl) {
+        try {
+            String url = "https://api.telegram.org/bot" + token + "/sendPhoto";
+
+            java.util.Map<String, Object> body = new java.util.HashMap<>();
+            body.put("chat_id", chatId);
+            body.put("photo", photoUrl);
+            body.put("caption", captionHtml);
+            body.put("parse_mode", "HTML");
+
+            if (buttonText != null && buttonUrl != null && !buttonUrl.isEmpty()) {
+                java.util.Map<String, Object> button = new java.util.HashMap<>();
+                button.put("text", buttonText);
+                button.put("url", buttonUrl);
+
+                java.util.Map<String, Object> markup = new java.util.HashMap<>();
+                markup.put("inline_keyboard", java.util.List.of(java.util.List.of(button)));
+                body.put("reply_markup", markup);
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<java.util.Map<String, Object>> request = new HttpEntity<>(body, headers);
+            restTemplate.postForObject(url, request, String.class);
+            System.out.println("✅ Telegram Photo post sent successfully with Inline Button!");
+            return true;
+
+        } catch (Exception e) {
+            System.err.println("Telegram sendPhoto error: " + e.getMessage() + ". Falling back to text message.");
+            return sendMessageWithButton(captionHtml, buttonText, buttonUrl);
+        }
+    }
+
+    /**
+     * Sends a rich text message with HTML formatting and inline action button to Telegram channel.
+     */
+    public boolean sendMessageWithButton(String messageHtml, String buttonText, String buttonUrl) {
+        try {
+            String url = "https://api.telegram.org/bot" + token + "/sendMessage";
+
+            java.util.Map<String, Object> body = new java.util.HashMap<>();
+            body.put("chat_id", chatId);
+            body.put("text", messageHtml);
+            body.put("parse_mode", "HTML");
+            body.put("disable_web_page_preview", false);
+
+            if (buttonText != null && buttonUrl != null && !buttonUrl.isEmpty()) {
+                java.util.Map<String, Object> button = new java.util.HashMap<>();
+                button.put("text", buttonText);
+                button.put("url", buttonUrl);
+
+                java.util.Map<String, Object> markup = new java.util.HashMap<>();
+                markup.put("inline_keyboard", java.util.List.of(java.util.List.of(button)));
+                body.put("reply_markup", markup);
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<java.util.Map<String, Object>> request = new HttpEntity<>(body, headers);
+            restTemplate.postForObject(url, request, String.class);
+            System.out.println("✅ Telegram HTML message sent successfully with Inline Button!");
+            return true;
+
+        } catch (Exception e) {
+            System.err.println("Telegram sendMessageWithButton error: " + e.getMessage() + ". Falling back to plain text.");
+            return sendMessage(messageHtml.replaceAll("<[^>]*>", ""));
         }
     }
 
