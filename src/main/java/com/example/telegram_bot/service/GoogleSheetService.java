@@ -193,8 +193,8 @@ public class GoogleSheetService {
             String telegramStatus = row.size() > 5 ? row.get(5).toString() : "";
             String instagramStatus = row.size() > 6 ? row.get(6).toString() : "";
 
-            boolean instagramPending = "NEW".equalsIgnoreCase(instagramStatus) || instagramStatus.trim().isEmpty();
-            boolean telegramPending = "NEW".equalsIgnoreCase(telegramStatus) || telegramStatus.trim().isEmpty();
+            boolean instagramPending = "NEW".equalsIgnoreCase(instagramStatus) || "FAILED".equalsIgnoreCase(instagramStatus) || instagramStatus.trim().isEmpty();
+            boolean telegramPending = "NEW".equalsIgnoreCase(telegramStatus) || "FAILED".equalsIgnoreCase(telegramStatus) || telegramStatus.trim().isEmpty();
             System.out.println("Row Number        : " + rowIndex);
             System.out.println("Telegram Status   : [" + telegramStatus + "]");
             System.out.println("Instagram Status  : [" + instagramStatus + "]");
