@@ -27,14 +27,18 @@ public class TelegramService {
 
     /**
      * Sends administrative notifications and alert messages to the configured admin Telegram chat.
+     * Skips sending if adminChatId is blank or identical to the public deal channel to prevent polluting public posts.
      */
     public boolean sendAdminNotification(String alertHtml) {
         try {
-            String targetChat = (adminChatId != null && !adminChatId.trim().isEmpty()) ? adminChatId : chatId;
+            if (adminChatId == null || adminChatId.trim().isEmpty() || adminChatId.trim().equalsIgnoreCase(chatId.trim())) {
+                System.out.println("ℹ️ Admin notification suppressed (admin.chat.id is same as public deal channel or blank). Logged alert:\n" + alertHtml);
+                return false;
+            }
             String url = "https://api.telegram.org/bot" + token + "/sendMessage";
 
             java.util.Map<String, Object> body = new java.util.HashMap<>();
-            body.put("chat_id", targetChat);
+            body.put("chat_id", adminChatId.trim());
             body.put("text", alertHtml);
             body.put("parse_mode", "HTML");
 
@@ -43,7 +47,7 @@ public class TelegramService {
 
             HttpEntity<java.util.Map<String, Object>> request = new HttpEntity<>(body, headers);
             restTemplate.postForObject(url, request, String.class);
-            System.out.println("🔔 Sent Admin Telegram Notification to " + targetChat);
+            System.out.println("🔔 Sent Admin Telegram Notification to " + adminChatId);
             return true;
         } catch (Exception e) {
             System.err.println("Failed to send Admin Telegram Notification: " + e.getMessage());
