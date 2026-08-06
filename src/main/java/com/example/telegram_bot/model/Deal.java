@@ -60,16 +60,32 @@ public class Deal {
         return 0;
     }
 
+    public long calculateSavingsAmount() {
+        if (price != null && mrp != null) {
+            try {
+                double p = Double.parseDouble(price.replaceAll("[^0-9.]", ""));
+                double m = Double.parseDouble(mrp.replaceAll("[^0-9.]", ""));
+                if (m > p) {
+                    return Math.round(m - p);
+                }
+            } catch (Exception ignored) {}
+        }
+        return 0;
+    }
+
     public String getDealRatingBadge() {
         int disc = calculateDiscountPercent();
+        long savings = calculateSavingsAmount();
+        String savingsText = savings > 0 ? " | SAVE ₹" + String.format("%,d", savings) : "";
+
         if (disc >= 60) {
-            return "🔥 SUPER DEAL (" + disc + "% OFF) 🌟🌟🌟🌟🌟";
+            return "🔥 SUPER STEAL DEAL (" + disc + "% OFF" + savingsText + ") 🌟🌟🌟🌟🌟";
         } else if (disc >= 40) {
-            return "⚡ HOT DEAL (" + disc + "% OFF) ⭐⭐⭐⭐";
+            return "⚡ MEGA DISCOUNT (" + disc + "% OFF" + savingsText + ") ⭐⭐⭐⭐";
         } else if (disc >= 20) {
-            return "💥 GOOD DEAL (" + disc + "% OFF) ⭐⭐⭐";
+            return "💥 HOT OFFER (" + disc + "% OFF" + savingsText + ") ⭐⭐⭐";
         } else if (disc > 0) {
-            return "✨ SPECIAL OFFER (" + disc + "% OFF) ⭐⭐⭐";
+            return "✨ SPECIAL DEAL (" + disc + "% OFF" + savingsText + ") ⭐⭐⭐";
         } else {
             return "🔥 HOT DEAL ALERT ⭐⭐⭐⭐";
         }

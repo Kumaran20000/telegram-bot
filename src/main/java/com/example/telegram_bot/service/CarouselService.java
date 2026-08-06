@@ -1,11 +1,18 @@
 package com.example.telegram_bot.service;
 
-import com.example.telegram_bot.model.Deal;
-import com.example.telegram_bot.model.ProductCategory;
-import lombok.RequiredArgsConstructor;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import com.example.telegram_bot.model.Deal;
+import com.example.telegram_bot.model.ProductCategory;
+
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
@@ -15,6 +22,8 @@ public class CarouselService {
     private final CategoryService categoryService;
     private final HashtagService hashtagService;
     private final InstagramService instagramService;
+    private final TelegramService telegramService;
+    private final MessageFormatterService messageFormatterService;
 
     /**
      * Groups all deals in Google Sheet by ProductCategory.
@@ -63,11 +72,64 @@ public class CarouselService {
         for (Map.Entry<ProductCategory, List<Deal>> entry : grouped.entrySet()) {
             String categoryStr = entry.getKey().name().toLowerCase();
             if (categoryStr.contains(search) || search.contains(categoryStr)
-                    || (search.contains("bluetooth") && entry.getKey() == ProductCategory.HEADPHONE)) {
+                    || (search.contains("bluetooth") && entry.getKey() == ProductCategory.HEADPHONE)
+                    || (search.contains("phone") && entry.getKey() == ProductCategory.MOBILE)
+                    || (search.contains("sneaker") && entry.getKey() == ProductCategory.SHOE)) {
                 matchingDeals.addAll(entry.getValue());
             }
         }
         return matchingDeals;
+    }
+
+    /**
+     * Accumulates 3 to 5 deals for a requested product category (e.g. LAPTOP, SHOE, WATCH, PHONE)
+     * and generates a formatted DM message with direct purchase links ready for Instagram/Telegram DMs.
+     */
+    public Map<String, Object> getCategoryDmContent(String categoryQuery, int limit) throws Exception {
+        List<Deal> deals = getDealsForCategoryName(categoryQuery);
+        Map<String, Object> result = new HashMap<>();
+
+        if (deals == null || deals.isEmpty()) {
+            result.put("status", "NO_DEALS_FOUND");
+            result.put("category", categoryQuery);
+            result.put("count", 0);
+            result.put("dmText", "Sorry, no active deals found right now for " + categoryQuery.toUpperCase() + ". Check back soon! 🔥");
+            result.put("deals", Collections.emptyList());
+            return result;
+        }
+
+        int maxCount = Math.min(Math.max(limit, 1), deals.size());
+        List<Deal> accumulatedDeals = deals.subList(0, maxCount);
+
+        ProductCategory detectedCat = categoryService.detectCategory(categoryQuery);
+        String categoryEmoji = messageFormatterService.getCategoryEmoji(detectedCat);
+        String catName = detectedCat != ProductCategory.DEFAULT ? detectedCat.name() : categoryQuery.toUpperCase();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(categoryEmoji).append(" <b>TOP ").append(accumulatedDeals.size())
+          .append(" ").append(catName).append(" DEALS FOR YOU!</b> ").append(categoryEmoji).append("\n\n");
+
+        int index = 1;
+        for (Deal deal : accumulatedDeals) {
+            int discount = deal.calculateDiscountPercent();
+            sb.append("<b>").append(index).append(". ").append(deal.getTitle()).append("</b>\n");
+            sb.append("💰 Price: ₹<b>").append(deal.getPrice()).append("</b>");
+            if (discount > 0) {
+                sb.append(" (<b>").append(discount).append("% OFF</b>)");
+            }
+            sb.append("\n🛒 Link: ").append(deal.getLink()).append("\n\n");
+            index++;
+        }
+
+        sb.append("💡 <i>Comment another product (e.g., LAPTOP, SHOE, WATCH, PHONE) to get more deal links!</i>\n");
+        sb.append("❤️ Follow @offerzone2538 for daily top deal alerts!");
+
+        result.put("status", "SUCCESS");
+        result.put("category", catName);
+        result.put("count", accumulatedDeals.size());
+        result.put("dmText", sb.toString());
+        result.put("deals", accumulatedDeals);
+        return result;
     }
 
     /**
@@ -93,18 +155,45 @@ public class CarouselService {
     }
 
     /**
-     * Posts a grouped multi-item product carousel exclusively to Instagram.
+     * Posts a grouped multi-item product carousel to Instagram (up to limit, default 5).
      */
     public boolean postCategoryCarouselToInstagram(String categoryQuery) throws Exception {
+        return postCategoryCarouselToInstagram(categoryQuery, 5);
+    }
+
+    public boolean postCategoryCarouselToInstagram(String categoryQuery, int limit) throws Exception {
         List<Deal> deals = getDealsForCategoryName(categoryQuery);
         if (deals == null || deals.isEmpty()) {
             System.out.println("No deals found for category query: " + categoryQuery);
             return false;
         }
 
-        ProductCategory category = categoryService.detectCategory(categoryQuery);
-        String caption = buildCarouselCaption(category, deals);
+        int maxCount = Math.min(Math.max(limit, 1), deals.size());
+        List<Deal> accumulatedDeals = deals.subList(0, maxCount);
 
-        return instagramService.publishInstagramCarousel(deals, caption);
+        ProductCategory category = categoryService.detectCategory(categoryQuery);
+        String caption = buildCarouselCaption(category, accumulatedDeals);
+
+        return instagramService.publishInstagramCarousel(accumulatedDeals, caption);
+    }
+
+    /**
+     * Posts an accumulated category deals group message (3-5 items) to Telegram.
+     */
+    public boolean postCategoryGroupToTelegram(String categoryQuery, int limit) throws Exception {
+        Map<String, Object> content = getCategoryDmContent(categoryQuery, limit);
+        if (!"SUCCESS".equals(content.get("status"))) {
+            return false;
+        }
+        String messageHtml = (String) content.get("dmText");
+        @SuppressWarnings("unchecked")
+        List<Deal> deals = (List<Deal>) content.get("deals");
+
+        boolean mediaSent = telegramService.sendMediaGroup(deals, messageHtml);
+        if (!mediaSent) {
+            return telegramService.sendMessageWithButton(messageHtml, "🛒 View All Deals", "https://t.me/BOnlinediscount");
+        }
+        return true;
     }
 }
+

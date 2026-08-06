@@ -166,16 +166,23 @@ public class DealController {
     @GetMapping("/caption")
     public ResponseEntity<?> generateCaption(
             @RequestParam String title,
-            @RequestParam(defaultValue = "N/A") String price) {
+            @RequestParam(defaultValue = "N/A") String price,
+            @RequestParam(required = false) Integer templateIndex) {
         Deal deal = new Deal();
         deal.setTitle(title);
         deal.setPrice(price);
 
-        String caption = captionService.createCaption(deal);
+        String caption = (templateIndex != null)
+                ? captionService.createCaption(deal, templateIndex)
+                : captionService.createCaption(deal);
+
         Map<String, Object> response = new HashMap<>();
         response.put("status", "SUCCESS");
         response.put("title", title);
         response.put("price", price);
+        if (templateIndex != null) {
+            response.put("templateIndex", templateIndex % 10);
+        }
         response.put("caption", caption);
         return ResponseEntity.ok(response);
     }
@@ -232,6 +239,60 @@ public class DealController {
             response.put("platform", "Instagram");
             response.put("category", category);
             response.put("message", posted ? "Carousel successfully posted to Instagram" : "Failed to post Instagram carousel (check Graph API credentials / image URLs)");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("status", "ERROR");
+            error.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    /**
+     * Accumulates 3 to 5 deals for a category (e.g. laptop, shoe, watch, phone)
+     * and returns a formatted DM message with direct purchase links ready to be sent to user DMs.
+     */
+    @GetMapping("/category-dm")
+    public ResponseEntity<?> getCategoryDmContent(
+            @RequestParam String category,
+            @RequestParam(defaultValue = "5") int limit) {
+        try {
+            Map<String, Object> response = carouselService.getCategoryDmContent(category, limit);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("status", "ERROR");
+            error.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    /**
+     * Posts an accumulated category deals group (3 to 5 deals) to Telegram or Instagram on-demand.
+     */
+    @PostMapping("/post-category-group")
+    public ResponseEntity<?> postCategoryGroup(
+            @RequestParam String category,
+            @RequestParam(defaultValue = "both") String platform,
+            @RequestParam(defaultValue = "5") int limit) {
+        try {
+            boolean telegramResult = false;
+            boolean instagramResult = false;
+
+            if ("telegram".equalsIgnoreCase(platform) || "both".equalsIgnoreCase(platform)) {
+                telegramResult = carouselService.postCategoryGroupToTelegram(category, limit);
+            }
+            if ("instagram".equalsIgnoreCase(platform) || "both".equalsIgnoreCase(platform)) {
+                instagramResult = carouselService.postCategoryCarouselToInstagram(category, limit);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "SUCCESS");
+            response.put("category", category);
+            response.put("limit", limit);
+            response.put("telegramPosted", telegramResult);
+            response.put("instagramPosted", instagramResult);
+            response.put("message", "Accumulated top " + limit + " deals for category '" + category + "' and processed posting.");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();

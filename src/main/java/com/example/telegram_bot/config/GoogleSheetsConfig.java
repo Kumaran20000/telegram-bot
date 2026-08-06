@@ -23,7 +23,7 @@ public class GoogleSheetsConfig {
 
         GoogleCredentials credentials;
 
-        // 1. Try Railway Environment Variable
+        // 1. Try Environment Variable
         String credentialsJson = System.getenv("GOOGLE_CREDENTIALS_JSON");
 
         if (credentialsJson != null && !credentialsJson.isBlank()) {
@@ -34,7 +34,7 @@ public class GoogleSheetsConfig {
             credentials = GoogleCredentials.fromStream(stream)
                     .createScoped(List.of("https://www.googleapis.com/auth/spreadsheets"));
 
-            System.out.println("Loaded Google credentials from Railway Environment Variable.");
+            System.out.println("Loaded Google credentials from GOOGLE_CREDENTIALS_JSON environment variable.");
 
         } else {
 
@@ -46,7 +46,7 @@ public class GoogleSheetsConfig {
             if (stream == null) {
                 throw new RuntimeException(
                         "Google credentials not found. " +
-                        "Set GOOGLE_CREDENTIALS on Railway or add credentials.json locally."
+                        "Set GOOGLE_CREDENTIALS_JSON environment variable or add credentials.json locally."
                 );
             }
 

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: telegram-bot
+    env: docker
+    plan: free
+    region: singapore # Change to your preferred region (e.g. oregon, frankfurt, singapore)
+    healthCheckPath: /api/deals/grouped
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: APP_SERVER_BASE_URL
+        sync: false # Set this to https://<your-render-app-name>.onrender.com after deployment
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: INSTAGRAM_ACCESS_TOKEN
+        sync: false
+      - key: INSTAGRAM_BUSINESS_ID
+        sync: false
+      - key: GOOGLE_CREDENTIALS_JSON
+        sync: false
+      - key: AMAZON_ASSOCIATE_TAG
+        sync: false

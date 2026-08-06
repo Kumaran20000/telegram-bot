@@ -165,7 +165,57 @@ public class GoogleSheetService {
         return response.getValues();
     }
 
-    // Process ONLY ONE NEW deal
+    // Computes analytics & health statistics across all Google Sheet rows
+    public java.util.Map<String, Object> getDealStats() {
+        java.util.Map<String, Object> stats = new java.util.HashMap<>();
+        try {
+            List<List<Object>> rows = getAllRows();
+            if (rows == null || rows.isEmpty()) {
+                stats.put("totalDeals", 0);
+                stats.put("message", "No rows found in sheet.");
+                return stats;
+            }
+
+            int total = 0;
+            int telegramPosted = 0;
+            int telegramNew = 0;
+            int telegramFailed = 0;
+
+            int instagramPosted = 0;
+            int instagramNew = 0;
+            int instagramFailed = 0;
+
+            for (List<Object> row : rows) {
+                if (row.isEmpty()) continue;
+                String title = row.size() > 0 ? row.get(0).toString().trim() : "";
+                if (title.equalsIgnoreCase("Title") || title.isEmpty()) continue;
+
+                total++;
+                String tgStatus = row.size() > 5 ? row.get(5).toString().trim() : "";
+                String igStatus = row.size() > 6 ? row.get(6).toString().trim() : "";
+
+                if ("POSTED".equalsIgnoreCase(tgStatus)) telegramPosted++;
+                else if ("FAILED".equalsIgnoreCase(tgStatus)) telegramFailed++;
+                else telegramNew++;
+
+                if ("POSTED".equalsIgnoreCase(igStatus)) instagramPosted++;
+                else if ("FAILED".equalsIgnoreCase(igStatus)) instagramFailed++;
+                else instagramNew++;
+            }
+
+            stats.put("status", "SUCCESS");
+            stats.put("totalDeals", total);
+            stats.put("telegram", java.util.Map.of("posted", telegramPosted, "pendingNew", telegramNew, "failed", telegramFailed));
+            stats.put("instagram", java.util.Map.of("posted", instagramPosted, "pendingNew", instagramNew, "failed", instagramFailed));
+
+        } catch (Exception e) {
+            stats.put("status", "ERROR");
+            stats.put("message", e.getMessage());
+        }
+        return stats;
+    }
+
+    // Process ONLY ONE deal per scheduler run (Prioritizes NEW deals first for both platforms; retries FAILED deals only if no NEW deals exist)
     public void processNextDeal() throws Exception {
 
         ValueRange response = sheetsService.spreadsheets()
@@ -180,8 +230,23 @@ public class GoogleSheetService {
             return;
         }
 
+        // Pass 1: Check for NEW deals for both Telegram & Instagram
+        boolean processedNew = processDealFromRows(rows, false);
+        if (processedNew) {
+            return;
+        }
+
+        // Pass 2: If no NEW deals exist, check for FAILED deals to retry later
+        System.out.println("ℹ️ No NEW deals available. Checking for FAILED deals to retry...");
+        boolean processedFailed = processDealFromRows(rows, true);
+
+        if (!processedFailed) {
+            System.out.println("No NEW or FAILED deals available.");
+        }
+    }
+
+    private boolean processDealFromRows(List<List<Object>> rows, boolean allowFailed) throws Exception {
         int rowIndex = 2;
-        boolean found = false;
 
         for (List<Object> row : rows) {
 
@@ -193,15 +258,23 @@ public class GoogleSheetService {
             String telegramStatus = row.size() > 5 ? row.get(5).toString() : "";
             String instagramStatus = row.size() > 6 ? row.get(6).toString() : "";
 
-            boolean instagramPending = "NEW".equalsIgnoreCase(instagramStatus) || "FAILED".equalsIgnoreCase(instagramStatus) || instagramStatus.trim().isEmpty();
-            boolean telegramPending = "NEW".equalsIgnoreCase(telegramStatus) || "FAILED".equalsIgnoreCase(telegramStatus) || telegramStatus.trim().isEmpty();
-            System.out.println("Row Number        : " + rowIndex);
-            System.out.println("Telegram Status   : [" + telegramStatus + "]");
-            System.out.println("Instagram Status  : [" + instagramStatus + "]");
-            System.out.println("Telegram Pending  : " + telegramPending);
-            System.out.println("Instagram Pending : " + instagramPending);
-            System.out.println("Row Size = " + row.size());
-            System.out.println("Row = " + row);
+            boolean isTelegramNew = isStatusNew(telegramStatus);
+            boolean isInstagramNew = isStatusNew(instagramStatus);
+            boolean isTelegramFailed = isStatusFailed(telegramStatus);
+            boolean isInstagramFailed = isStatusFailed(instagramStatus);
+
+            boolean telegramPending;
+            boolean instagramPending;
+
+            if (!allowFailed) {
+                // Pass 1: Only process NEW pending statuses
+                telegramPending = isTelegramNew;
+                instagramPending = isInstagramNew;
+            } else {
+                // Pass 2: Process both NEW and FAILED pending statuses
+                telegramPending = isTelegramNew || isTelegramFailed;
+                instagramPending = isInstagramNew || isInstagramFailed;
+            }
 
             if (!telegramPending && !instagramPending) {
                 rowIndex++;
@@ -226,7 +299,13 @@ public class GoogleSheetService {
                 continue;
             }
 
-            found = true;
+            System.out.println("Row Number        : " + rowIndex + " [" + (allowFailed ? "RETRY FAILED PASS" : "NEW DEALS PASS") + "]");
+            System.out.println("Telegram Status   : [" + telegramStatus + "]");
+            System.out.println("Instagram Status  : [" + instagramStatus + "]");
+            System.out.println("Telegram Pending  : " + telegramPending);
+            System.out.println("Instagram Pending : " + instagramPending);
+            System.out.println("Row Size = " + row.size());
+            System.out.println("Row = " + row);
 
             Deal deal = new Deal();
             deal.setTitle(title);
@@ -315,12 +394,18 @@ public class GoogleSheetService {
                 }
             }
 
-            break; // Process only one deal
+            return true;
         }
 
-        if (!found) {
-            System.out.println("No NEW deals available.");
-        }
+        return false;
+    }
+
+    private boolean isStatusNew(String status) {
+        return status == null || status.trim().isEmpty() || "NEW".equalsIgnoreCase(status.trim());
+    }
+
+    private boolean isStatusFailed(String status) {
+        return status != null && "FAILED".equalsIgnoreCase(status.trim());
     }
 
     private void updateInstagramStatus(int rowNumber, String status) throws Exception {

@@ -17,4 +17,8 @@ public class CaptionService {
     public String createCaption(Deal deal) {
         return messageFormatterService.formatInstagramCaption(deal);
     }
+
+    public String createCaption(Deal deal, int templateIndex) {
+        return messageFormatterService.formatInstagramCaption(deal, templateIndex);
+    }
 }
