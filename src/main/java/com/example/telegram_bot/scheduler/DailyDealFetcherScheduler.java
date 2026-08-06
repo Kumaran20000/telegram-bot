@@ -30,9 +30,9 @@ public class DailyDealFetcherScheduler {
 
     /**
      * Scheduled job to automatically fetch and save top deals (default 10) daily to Google Sheet.
-     * Default schedule: Every day at 08:00 AM (0 0 8 * * ?).
+     * Default schedule: Every day at 08:30 PM (0 30 20 * * ?).
      */
-    @Scheduled(cron = "${daily.deal.fetch.cron:0 0 8 * * ?}")
+    @Scheduled(cron = "${daily.deal.fetch.cron:0 30 20 * * ?}")
     public void fetchDailyDeals() {
         if (!enabled) {
             System.out.println("ℹ️ Daily deal fetcher is disabled in configuration.");
@@ -52,7 +52,7 @@ public class DailyDealFetcherScheduler {
             telegramService.sendAdminNotification(
                     "🌅 <b>Daily Deal Fetcher Summary</b>\n\n" +
                     "✅ Successfully scraped and added <b>" + deals.size() + "</b> new products to Google Sheet.\n" +
-                    "⏰ Next scheduled run tomorrow at 8:00 AM."
+                    "⏰ Next scheduled run tomorrow at 8:30 PM."
             );
         } catch (Exception e) {
             System.err.println("❌ Daily Deal Fetcher Error: " + e.getMessage());
