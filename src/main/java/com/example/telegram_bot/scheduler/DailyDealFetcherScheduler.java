@@ -20,7 +20,7 @@ public class DailyDealFetcherScheduler {
     @Value("${daily.deal.fetch.enabled:true}")
     private boolean enabled;
 
-    @Value("${daily.deal.fetch.limit:10}")
+    @Value("${daily.deal.fetch.limit:50}")
     private int dailyLimit;
 
     public DailyDealFetcherScheduler(AmazonSiteStripeService amazonSiteStripeService, TelegramService telegramService) {
@@ -29,10 +29,10 @@ public class DailyDealFetcherScheduler {
     }
 
     /**
-     * Scheduled job to automatically fetch and save top deals (default 10) daily to Google Sheet.
-     * Default schedule: Every day at 08:30 PM (0 30 20 * * ?).
+     * Scheduled job to automatically fetch and save top high-offer deals (default 50) daily to Google Sheet.
+     * Default schedule: Every day at 11:10 AM local time (0 10 11 * * ?).
      */
-    @Scheduled(cron = "${daily.deal.fetch.cron:0 30 20 * * ?}")
+    @Scheduled(cron = "${daily.deal.fetch.cron:0 32 10 * * ?}", zone = "${daily.deal.fetch.zone:Asia/Kolkata}")
     public void fetchDailyDeals() {
         if (!enabled) {
             System.out.println("ℹ️ Daily deal fetcher is disabled in configuration.");
@@ -52,7 +52,7 @@ public class DailyDealFetcherScheduler {
             telegramService.sendAdminNotification(
                     "🌅 <b>Daily Deal Fetcher Summary</b>\n\n" +
                     "✅ Successfully scraped and added <b>" + deals.size() + "</b> new products to Google Sheet.\n" +
-                    "⏰ Next scheduled run tomorrow at 8:30 PM."
+                    "⏰ Next scheduled run tomorrow at 11:10 AM."
             );
         } catch (Exception e) {
             System.err.println("❌ Daily Deal Fetcher Error: " + e.getMessage());

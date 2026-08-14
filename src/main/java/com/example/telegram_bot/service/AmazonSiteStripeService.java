@@ -29,6 +29,13 @@ public class AmazonSiteStripeService {
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
+    private static final String[] USER_AGENTS = new String[]{
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15"
+    };
+
     private static final Pattern ASIN_PATTERN = Pattern.compile("/(?:dp|gp/product)/([A-Z0-9]{10})");
 
     public AmazonSiteStripeService(GoogleSheetService googleSheetService) {
@@ -137,7 +144,8 @@ public class AmazonSiteStripeService {
     }
 
     /**
-     * Scrapes top N deal offers from Amazon Goldbox / Today's Deals (https://www.amazon.in/gp/goldbox),
+     * Scrapes top N deal offers from Amazon Goldbox / Today's Deals and popular bestseller hubs,
+     * prioritizes high offer/discount products that people are likely to buy,
      * extracts their details (Title, Price, Image, Link), and saves them all to Google Sheet.
      */
     public List<Deal> scrapeGoldboxTopDeals(String goldboxUrl, int limit) throws Exception {
@@ -149,24 +157,45 @@ public class AmazonSiteStripeService {
 
         String[] sources = new String[]{
                 targetUrl,
+                "https://www.amazon.in/s?k=deals+today",
+                "https://www.amazon.in/s?k=top+offers+electronics",
+                "https://www.amazon.in/s?k=bestsellers+today",
+                "https://www.amazon.in/s?k=headphones+discount",
+                "https://www.amazon.in/s?k=smartwatch+offer",
                 "https://www.amazon.in/deals",
                 "https://www.amazon.in/gp/bestsellers",
+                "https://www.amazon.in/gp/bestsellers/electronics",
                 "https://www.amazon.in/gp/movers-and-shakers"
         };
 
-        int maxCandidates = Math.max(limit * 3, 30);
+        int maxCandidates = Math.min(Math.max(limit * 3, 15), 40);
+        int uaIndex = 0;
+
         for (String source : sources) {
             if (productUrls.size() >= maxCandidates) break;
             try {
+                String currentUa = USER_AGENTS[(uaIndex++) % USER_AGENTS.length];
                 Document doc = Jsoup.connect(source)
-                        .userAgent(USER_AGENT)
+                        .userAgent(currentUa)
                         .header("Accept-Language", "en-US,en;q=0.9")
                         .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
                         .referrer("https://www.google.com")
-                        .timeout(10000)
+                        .timeout(6000)
                         .followRedirects(true)
                         .get();
 
+                // 1. Extract from data-asin attributes (Used heavily on Amazon search & bestseller grids)
+                Elements asinElements = doc.select("[data-asin]");
+                for (Element el : asinElements) {
+                    String asin = el.attr("data-asin").trim();
+                    if (asin.matches("B[A-Z0-9]{9}")) {
+                        String cleanUrl = attachAffiliateTag("https://www.amazon.in/dp/" + asin);
+                        productUrls.add(cleanUrl);
+                        if (productUrls.size() >= maxCandidates) break;
+                    }
+                }
+
+                // 2. Extract from standard hyper-links
                 Elements links = doc.select("a[href]");
                 for (Element link : links) {
                     String href = link.attr("abs:href");
@@ -185,23 +214,52 @@ public class AmazonSiteStripeService {
             }
         }
 
-        List<Deal> savedDeals = new ArrayList<>();
-        for (String url : productUrls) {
-            if (savedDeals.size() >= limit) break;
+        System.out.println("Collected " + productUrls.size() + " deal candidates. Scraping details in parallel...");
+
+        // Scrape candidate details in parallel for high speed
+        List<Deal> candidateDeals = new java.util.concurrent.CopyOnWriteArrayList<>();
+        productUrls.parallelStream().forEach(url -> {
+            if (candidateDeals.size() >= limit * 2) return;
             try {
-                System.out.println("Scraping Daily Deal candidate (" + (savedDeals.size() + 1) + "/" + limit + "): " + url);
                 Deal deal = scrapeAmazonProduct(url);
-                
-                if (googleSheetService.isDuplicateDeal(deal)) {
-                    System.out.println("⚠️ Skipping duplicate deal already in Google Sheet: " + deal.getTitle());
-                    continue;
+
+                if (deal.getTitle() == null || deal.getTitle().isEmpty() || deal.getTitle().startsWith("Amazon Deal")
+                        || deal.getTitle().contains("Robot Check") || deal.getTitle().equalsIgnoreCase("Amazon.in")
+                        || deal.getPrice() == null || deal.getPrice().equalsIgnoreCase("N/A")) {
+                    System.out.println("⚠️ Skipping incomplete/blocked scraped candidate: " + url);
+                    return;
                 }
 
+                if (googleSheetService.isDuplicateDeal(deal)) {
+                    System.out.println("⚠️ Skipping duplicate deal already in Google Sheet: " + deal.getTitle());
+                    return;
+                }
+
+                candidateDeals.add(deal);
+                System.out.println("✅ Found valid deal candidate: " + deal.getTitle() + " (₹" + deal.getPrice() + ")");
+            } catch (Exception e) {
+                System.err.println("Error scraping deal candidate [" + url + "]: " + e.getMessage());
+            }
+        });
+
+        // Prioritize deals by highest discount percentage and savings amount
+        List<Deal> sortedDeals = new ArrayList<>(candidateDeals);
+        sortedDeals.sort((d1, d2) -> {
+            int discCompare = Integer.compare(d2.calculateDiscountPercent(), d1.calculateDiscountPercent());
+            if (discCompare != 0) return discCompare;
+            return Long.compare(d2.calculateSavingsAmount(), d1.calculateSavingsAmount());
+        });
+
+        // Save top high-offer deals up to the requested limit (e.g. 50 deals)
+        List<Deal> savedDeals = new ArrayList<>();
+        for (Deal deal : sortedDeals) {
+            if (savedDeals.size() >= limit) break;
+            try {
                 googleSheetService.saveDeal(deal);
                 savedDeals.add(deal);
-                System.out.println("✅ Saved Daily Deal #" + savedDeals.size() + " -> " + deal.getTitle() + " (₹" + deal.getPrice() + ")");
+                System.out.println("✅ Saved High-Offer Deal #" + savedDeals.size() + " (" + deal.calculateDiscountPercent() + "% OFF) -> " + deal.getTitle() + " (₹" + deal.getPrice() + ")");
             } catch (Exception e) {
-                System.err.println("Error saving Daily deal [" + url + "]: " + e.getMessage());
+                System.err.println("Error saving deal to Google Sheet [" + deal.getLink() + "]: " + e.getMessage());
             }
         }
 

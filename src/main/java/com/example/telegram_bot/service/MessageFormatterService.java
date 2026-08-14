@@ -173,6 +173,37 @@ public class MessageFormatterService {
     }
 
     /**
+     * Formats a post specifically tailored for a Facebook Page.
+     */
+    public String formatFacebookPost(Deal deal) {
+        ProductCategory category = categoryService.detectCategory(deal.getTitle());
+        String hashtags = hashtagService.getHashTags(category);
+        String categoryEmoji = getCategoryEmoji(category);
+        String storeName = (deal.getSource() != null && !deal.getSource().trim().isEmpty()) ? deal.getSource() : "Amazon";
+        int discount = deal.calculateDiscountPercent();
+        String ratingBadge = deal.getDealRatingBadge();
+        String title = deal.getTitle();
+        String price = deal.getPrice() != null ? deal.getPrice() : "N/A";
+        String mrp = deal.getMrp();
+        boolean hasMrp = mrp != null && !mrp.isEmpty() && !mrp.equalsIgnoreCase("N/A");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(ratingBadge).append("\n\n");
+        sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
+        sb.append("💰 Deal Price: ₹").append(price);
+        if (hasMrp) sb.append(" (MRP: ₹").append(mrp).append(")");
+        sb.append("\n");
+        if (discount > 0) sb.append("⚡ Discount: ").append(discount).append("% OFF\n");
+        sb.append("🏷️ Store: ").append(storeName).append("\n\n");
+        if (deal.getLink() != null && !deal.getLink().trim().isEmpty()) {
+            sb.append("👉 Buy Now on ").append(storeName).append(": ").append(deal.getLink()).append("\n\n");
+        }
+        sb.append("⚡ Limited time offer — prices may change quickly!\n\n");
+        sb.append(hashtags);
+        return sb.toString();
+    }
+
+    /**
      * Formats an Instagram caption choosing randomly among 10 distinct content templates.
      */
     public String formatInstagramCaption(Deal deal) {
@@ -185,14 +216,16 @@ public class MessageFormatterService {
      */
     public String formatInstagramCaption(Deal deal, int templateIndex) {
         ProductCategory category = categoryService.detectCategory(deal.getTitle());
-        String hashtags = hashtagService.getHashTags(category);
+        String hashtags = hashtagService.getHashTags(category, deal.getTitle());
         String categoryEmoji = getCategoryEmoji(category);
         int discount = deal.calculateDiscountPercent();
+        long savings = deal.calculateSavingsAmount();
         String ratingBadge = deal.getDealRatingBadge();
         String title = deal.getTitle();
         String price = deal.getPrice() != null ? deal.getPrice() : "N/A";
         String mrp = deal.getMrp();
         boolean hasMrp = mrp != null && !mrp.isEmpty() && !mrp.equalsIgnoreCase("N/A");
+        String savingsText = savings > 0 ? " (Save ₹" + String.format("%,d", savings) + ")" : "";
 
         int variant = Math.abs(templateIndex) % 10;
         StringBuilder sb = new StringBuilder();
@@ -202,10 +235,9 @@ public class MessageFormatterService {
                 // Comment "LINK" Classic
                 sb.append(ratingBadge).append("\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("💰 Special Offer: ₹").append(price);
-                if (hasMrp) sb.append(" (MRP: ₹").append(mrp).append(")");
-                sb.append("\n");
-                if (discount > 0) sb.append("⚡ Save ").append(discount).append("% Today!\n");
+                sb.append("🔥 Offer Price: ₹").append(price).append("\n");
+                if (hasMrp) sb.append("❌ Original MRP: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("💥 Discount: ").append(discount).append("% OFF").append(savingsText).append("\n");
                 sb.append("\n");
                 sb.append("👇 Comment \"LINK\" and we will DM you the direct purchase link!\n\n");
                 sb.append("❤️ Follow @offerzone2538 for daily top deals & savings.\n\n");
@@ -216,10 +248,9 @@ public class MessageFormatterService {
                 // Comment "DEAL" / Inbox Hook
                 sb.append("💥 PRICE DROP ALERT! 📉\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("💰 Deal Price: ₹").append(price).append(" ONLY");
-                if (hasMrp) sb.append(" (MRP: ₹").append(mrp).append(")");
-                sb.append("\n");
-                if (discount > 0) sb.append("⚡ Flat ").append(discount).append("% OFF!\n");
+                sb.append("💰 Deal Price: ₹").append(price).append(" ONLY\n");
+                if (hasMrp) sb.append("📌 Original List Price: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("⚡ Flat ").append(discount).append("% OFF").append(savingsText).append("!\n");
                 sb.append("\n");
                 sb.append("👇 Drop a comment saying \"DEAL\" and check your DM for the link! 📩\n\n");
                 sb.append("🔥 Follow @offerzone2538 to never miss a secret deal!\n\n");
@@ -230,10 +261,9 @@ public class MessageFormatterService {
                 // Steal Deal / Bio Link Hook
                 sb.append("💎 STEAL DEAL OF THE DAY 💎\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("💵 Offer Price: ₹").append(price);
-                if (hasMrp) sb.append(" (MRP: ₹").append(mrp).append(")");
-                sb.append("\n");
-                if (discount > 0) sb.append("💥 You Save ").append(discount).append("%!\n");
+                sb.append("💵 Special Offer Rate: ₹").append(price).append("\n");
+                if (hasMrp) sb.append("❌ Regular MRP: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("💥 Savings: ").append(discount).append("% OFF").append(savingsText).append("!\n");
                 sb.append("\n");
                 sb.append("👇 Want this deal? Comment \"WANT\" or check link in BIO!\n\n");
                 sb.append("✨ Double tap ❤️ if you love savings! Follow @offerzone2538 for more!\n\n");
@@ -244,10 +274,10 @@ public class MessageFormatterService {
                 // Limited Stock Hook
                 sb.append("🚨 HOT PRODUCT ON DISCOUNT! 🚨\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("💰 Price Today: ₹").append(price).append("\n");
-                if (hasMrp) sb.append("❌ List Price: ₹").append(mrp);
-                if (discount > 0) sb.append(" (").append(discount).append("% OFF)");
-                sb.append("\n\n");
+                sb.append("💰 Offer Price: ₹").append(price).append("\n");
+                if (hasMrp) sb.append("❌ MRP: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("⚡ Discount: ").append(discount).append("% OFF").append(savingsText).append("\n");
+                sb.append("\n");
                 sb.append("👇 Comment \"BUY\" and we'll send the direct link to your inbox! 📬\n\n");
                 sb.append("⏰ Prices change fast, grab it before it's gone!\n");
                 sb.append("❤️ Follow @offerzone2538 for daily savings.\n\n");
@@ -258,10 +288,9 @@ public class MessageFormatterService {
                 // Flash Sale Hook
                 sb.append("⏰ FLASH SALE ALERT! ⚡\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("🔥 Today's Rate: ₹").append(price);
-                if (hasMrp) sb.append(" (MRP ₹").append(mrp).append(")");
-                sb.append("\n");
-                if (discount > 0) sb.append("⚡ Massive ").append(discount).append("% Discount!\n");
+                sb.append("🔥 Offer Price Today: ₹").append(price).append("\n");
+                if (hasMrp) sb.append("📌 MRP Price: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("⚡ Massive ").append(discount).append("% Discount").append(savingsText).append("!\n");
                 sb.append("\n");
                 sb.append("👇 Comment \"SEND LINK\" below and get it sent straight to your DM!\n\n");
                 sb.append("📱 Turn on post notifications so you never miss a price drop!\n");
@@ -273,10 +302,9 @@ public class MessageFormatterService {
                 // Loot Offer Hook
                 sb.append("🎉 TODAY'S TOP PICK! 🛍️\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("💰 Offer Price: ₹").append(price);
-                if (hasMrp) sb.append(" (MRP: ₹").append(mrp).append(")");
-                sb.append("\n");
-                if (discount > 0) sb.append("🔥 Discount: ").append(discount).append("% OFF\n");
+                sb.append("💰 Offer Price: ₹").append(price).append("\n");
+                if (hasMrp) sb.append("❌ List Price: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("🔥 Savings: ").append(discount).append("% OFF").append(savingsText).append("\n");
                 sb.append("\n");
                 sb.append("👇 Comment \"GET\" to receive the instant purchase link!\n\n");
                 sb.append("💥 Tag a friend who needs this!\n");
@@ -288,10 +316,9 @@ public class MessageFormatterService {
                 // Review / Rating Style
                 sb.append("🌟 HIGHLY RATED DEAL 🌟\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("💰 Price: ₹").append(price);
-                if (hasMrp) sb.append(" (MRP: ₹").append(mrp).append(")");
-                sb.append("\n");
-                if (discount > 0) sb.append("⚡ ").append(discount).append("% Instant Discount!\n");
+                sb.append("💰 Special Offer: ₹").append(price).append("\n");
+                if (hasMrp) sb.append("📌 Original Price: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("⚡ Discount: ").append(discount).append("% Instant OFF").append(savingsText).append("!\n");
                 sb.append("\n");
                 sb.append("👇 Type \"LINK\" in the comments for instant link in DM! 📥\n\n");
                 sb.append("❤️ Follow @offerzone2538 for curated top Amazon deals daily!\n\n");
@@ -302,10 +329,10 @@ public class MessageFormatterService {
                 // Bargain Hunters Hook
                 sb.append("🎯 BARGAIN HUNTERS SPECIAL! 🎯\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("💵 Price: ₹").append(price).append("\n");
-                if (discount > 0) sb.append("⚡ Savings: ").append(discount).append("% OFF");
-                if (hasMrp) sb.append(" (MRP ₹").append(mrp).append(")");
-                sb.append("\n\n");
+                sb.append("💵 Deal Price: ₹").append(price).append("\n");
+                if (hasMrp) sb.append("❌ MRP: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("⚡ Total Discount: ").append(discount).append("% OFF").append(savingsText).append("\n");
+                sb.append("\n");
                 sb.append("👇 Comment \"YES\" and we'll DM you the link right away!\n\n");
                 sb.append("📌 Save this post for later!\n");
                 sb.append("❤️ Follow @offerzone2538 for daily shopping deals!\n\n");
@@ -316,10 +343,9 @@ public class MessageFormatterService {
                 // Short & Viral
                 sb.append("🔥 MEGA DISCOUNT UNLOCKED! 🔥\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("💲 Deal Price: ₹").append(price);
-                if (hasMrp) sb.append(" (MRP ₹").append(mrp).append(")");
-                sb.append("\n");
-                if (discount > 0) sb.append("💥 ").append(discount).append("% OFF!\n");
+                sb.append("💲 Special Offer: ₹").append(price).append("\n");
+                if (hasMrp) sb.append("📌 Original MRP: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("💥 Discount: ").append(discount).append("% OFF").append(savingsText).append("!\n");
                 sb.append("\n");
                 sb.append("👇 Comment \"LINK\" for direct store link!\n\n");
                 sb.append("❤️ Follow @offerzone2538 for non-stop deal alerts!\n\n");
@@ -331,10 +357,9 @@ public class MessageFormatterService {
                 // Shopping Guide / Deal of the Day
                 sb.append("🛍️ DEAL OF THE DAY! 🛍️\n\n");
                 sb.append(categoryEmoji).append(" ").append(title).append("\n\n");
-                sb.append("💰 Grab it for ₹").append(price).append(" today");
-                if (hasMrp) sb.append(" (MRP ₹").append(mrp).append(")");
-                sb.append("\n");
-                if (discount > 0) sb.append("⚡ Save ").append(discount).append("%!\n");
+                sb.append("💰 Today's Offer Price: ₹").append(price).append("\n");
+                if (hasMrp) sb.append("❌ Original List MRP: ₹").append(mrp).append("\n");
+                if (discount > 0) sb.append("⚡ Save ").append(discount).append("% OFF").append(savingsText).append("!\n");
                 sb.append("\n");
                 sb.append("👇 Comment \"SHOP\" and we will send the purchase link to your DMs!\n\n");
                 sb.append("🔥 Follow @offerzone2538 for the best deals every day!\n\n");

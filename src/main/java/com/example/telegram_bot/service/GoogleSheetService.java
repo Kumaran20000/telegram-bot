@@ -16,6 +16,7 @@ public class GoogleSheetService {
     private final Sheets sheetsService;
     private final TelegramService telegramService;
     private final InstagramService instagramService;
+    private final FacebookPageService facebookPageService;
     private final VideoGenerationService videoGenerationService;
     private final MessageFormatterService messageFormatterService;
 
@@ -32,12 +33,14 @@ public class GoogleSheetService {
             Sheets sheetsService,
             TelegramService telegramService,
             InstagramService instagramService,
+            FacebookPageService facebookPageService,
             VideoGenerationService videoGenerationService,
             MessageFormatterService messageFormatterService) {
 
         this.sheetsService = sheetsService;
         this.telegramService = telegramService;
         this.instagramService = instagramService;
+        this.facebookPageService = facebookPageService;
         this.videoGenerationService = videoGenerationService;
         this.messageFormatterService = messageFormatterService;
     }
@@ -59,6 +62,7 @@ public class GoogleSheetService {
                                     deal.getImage(),
                                     deal.getLink(),
                                     deal.getSource(),
+                                    "NEW",
                                     "NEW",
                                     "NEW"
                             )
@@ -185,6 +189,10 @@ public class GoogleSheetService {
             int instagramNew = 0;
             int instagramFailed = 0;
 
+            int facebookPosted = 0;
+            int facebookNew = 0;
+            int facebookFailed = 0;
+
             for (List<Object> row : rows) {
                 if (row.isEmpty()) continue;
                 String title = row.size() > 0 ? row.get(0).toString().trim() : "";
@@ -193,6 +201,7 @@ public class GoogleSheetService {
                 total++;
                 String tgStatus = row.size() > 5 ? row.get(5).toString().trim() : "";
                 String igStatus = row.size() > 6 ? row.get(6).toString().trim() : "";
+                String fbStatus = row.size() > 7 ? row.get(7).toString().trim() : "";
 
                 if ("POSTED".equalsIgnoreCase(tgStatus)) telegramPosted++;
                 else if ("FAILED".equalsIgnoreCase(tgStatus)) telegramFailed++;
@@ -201,12 +210,17 @@ public class GoogleSheetService {
                 if ("POSTED".equalsIgnoreCase(igStatus)) instagramPosted++;
                 else if ("FAILED".equalsIgnoreCase(igStatus)) instagramFailed++;
                 else instagramNew++;
+
+                if ("POSTED".equalsIgnoreCase(fbStatus)) facebookPosted++;
+                else if ("FAILED".equalsIgnoreCase(fbStatus)) facebookFailed++;
+                else facebookNew++;
             }
 
             stats.put("status", "SUCCESS");
             stats.put("totalDeals", total);
             stats.put("telegram", java.util.Map.of("posted", telegramPosted, "pendingNew", telegramNew, "failed", telegramFailed));
             stats.put("instagram", java.util.Map.of("posted", instagramPosted, "pendingNew", instagramNew, "failed", instagramFailed));
+            stats.put("facebook", java.util.Map.of("posted", facebookPosted, "pendingNew", facebookNew, "failed", facebookFailed));
 
         } catch (Exception e) {
             stats.put("status", "ERROR");
@@ -257,26 +271,33 @@ public class GoogleSheetService {
             String source = row.size() > 4 ? row.get(4).toString() : "";
             String telegramStatus = row.size() > 5 ? row.get(5).toString() : "";
             String instagramStatus = row.size() > 6 ? row.get(6).toString() : "";
+            String facebookStatus = row.size() > 7 ? row.get(7).toString() : "";
 
             boolean isTelegramNew = isStatusNew(telegramStatus);
             boolean isInstagramNew = isStatusNew(instagramStatus);
+            boolean isFacebookNew = isStatusNew(facebookStatus);
+
             boolean isTelegramFailed = isStatusFailed(telegramStatus);
             boolean isInstagramFailed = isStatusFailed(instagramStatus);
+            boolean isFacebookFailed = isStatusFailed(facebookStatus);
 
             boolean telegramPending;
             boolean instagramPending;
+            boolean facebookPending;
 
             if (!allowFailed) {
                 // Pass 1: Only process NEW pending statuses
                 telegramPending = isTelegramNew;
                 instagramPending = isInstagramNew;
+                facebookPending = isFacebookNew;
             } else {
                 // Pass 2: Process both NEW and FAILED pending statuses
                 telegramPending = isTelegramNew || isTelegramFailed;
                 instagramPending = isInstagramNew || isInstagramFailed;
+                facebookPending = isFacebookNew || isFacebookFailed;
             }
 
-            if (!telegramPending && !instagramPending) {
+            if (!telegramPending && !instagramPending && !facebookPending) {
                 rowIndex++;
                 continue;
             }
@@ -302,8 +323,10 @@ public class GoogleSheetService {
             System.out.println("Row Number        : " + rowIndex + " [" + (allowFailed ? "RETRY FAILED PASS" : "NEW DEALS PASS") + "]");
             System.out.println("Telegram Status   : [" + telegramStatus + "]");
             System.out.println("Instagram Status  : [" + instagramStatus + "]");
+            System.out.println("Facebook Status   : [" + facebookStatus + "]");
             System.out.println("Telegram Pending  : " + telegramPending);
             System.out.println("Instagram Pending : " + instagramPending);
+            System.out.println("Facebook Pending  : " + facebookPending);
             System.out.println("Row Size = " + row.size());
             System.out.println("Row = " + row);
 
@@ -353,33 +376,26 @@ public class GoogleSheetService {
             }
 
             if (instagramPending) {
-                System.out.println(">>>>>>>> PROCESSING INSTAGRAM POST / REEL <<<<<<<<");
+                System.out.println(">>>>>>>> PROCESSING INSTAGRAM REEL <<<<<<<<");
                 boolean instagramPosted = false;
+
+                // Pre-generate 9:16 video reel with dynamic hook rotation for this deal
+                try {
+                    videoGenerationService.createReel(deal);
+                } catch (Exception e) {
+                    System.out.println("⚠️ Warning: Could not pre-generate reel for deal: " + e.getMessage());
+                }
 
                 boolean isLocalServer = serverBaseUrl.contains("localhost") || serverBaseUrl.contains("127.0.0.1");
 
                 if (isLocalServer) {
                     System.out.println("⚠️ WARNING: 'app.server.base-url' is set to localhost (" + serverBaseUrl + ").");
                     System.out.println("⚠️ Meta/Instagram Graph API CANNOT access localhost URLs!");
-                    System.out.println("⚠️ To publish Reels or local images, run 'ngrok http 8080' and set 'app.server.base-url=https://<your-ngrok-url>' in application.properties.");
+                    System.out.println("⚠️ Run 'npx localtunnel --port 8080' or set 'app.server.base-url' to your public HTTPS URL to publish Reels.");
                 } else {
-                    // Step 1: Try publishing Reel video via public URL
                     String videoUrl = serverBaseUrl + "/video/stream";
                     System.out.println("Attempting Instagram Reel post via Video URL: " + videoUrl);
                     instagramPosted = instagramService.publishReel(deal, videoUrl);
-
-                    // Step 2: Fallback to 1:1 formatted static image via public URL
-                    if (!instagramPosted) {
-                        String formattedImageUrl = serverBaseUrl + "/video/image/stream";
-                        System.out.println("Reel post skipped/failed. Attempting 1:1 formatted image post via: " + formattedImageUrl);
-                        instagramPosted = instagramService.publish(deal, formattedImageUrl);
-                    }
-                }
-
-                // Step 3: Direct fallback to raw public deal image URL if local server or previous attempts failed
-                if (!instagramPosted && deal.getImage() != null && deal.getImage().startsWith("http")) {
-                    System.out.println("Attempting fallback to direct public deal image URL: " + deal.getImage());
-                    instagramPosted = instagramService.publish(deal, deal.getImage());
                 }
 
                 if (instagramPosted) {
@@ -387,8 +403,24 @@ public class GoogleSheetService {
                 } else {
                     updateInstagramStatus(rowIndex, "FAILED");
                     telegramService.sendAdminNotification(
-                            "⚠️ <b>Posting Alert (Instagram)</b>\n\n" +
-                            "Failed to publish deal to Instagram at Row <b>" + rowIndex + "</b>:\n" +
+                            "⚠️ <b>Posting Alert (Instagram Reel)</b>\n\n" +
+                            "Failed to publish Reel to Instagram at Row <b>" + rowIndex + "</b>:\n" +
+                            "🛒 <i>" + deal.getTitle() + "</i>"
+                    );
+                }
+            }
+
+            if (facebookPending) {
+                System.out.println(">>>>>>>> PROCESSING FACEBOOK PAGE POST <<<<<<<<");
+                boolean facebookPosted = facebookPageService.publish(deal);
+
+                if (facebookPosted) {
+                    updateFacebookStatus(rowIndex, "POSTED");
+                } else {
+                    updateFacebookStatus(rowIndex, "FAILED");
+                    telegramService.sendAdminNotification(
+                            "⚠️ <b>Posting Alert (Facebook Page)</b>\n\n" +
+                            "Failed to publish deal to Facebook Page at Row <b>" + rowIndex + "</b>:\n" +
                             "🛒 <i>" + deal.getTitle() + "</i>"
                     );
                 }
@@ -406,6 +438,22 @@ public class GoogleSheetService {
 
     private boolean isStatusFailed(String status) {
         return status != null && "FAILED".equalsIgnoreCase(status.trim());
+    }
+
+    private void updateFacebookStatus(int rowNumber, String status) throws Exception {
+
+        String updateRange = "Sheet1!H" + rowNumber;
+
+        ValueRange body = new ValueRange()
+                .setValues(List.of(List.of(status)));
+
+        sheetsService.spreadsheets()
+                .values()
+                .update(spreadsheetId, updateRange, body)
+                .setValueInputOption("RAW")
+                .execute();
+
+        System.out.println("Facebook Status -> " + status);
     }
 
     private void updateInstagramStatus(int rowNumber, String status) throws Exception {

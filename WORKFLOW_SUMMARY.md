@@ -30,11 +30,29 @@ This document captures the current implementation status and complete workflow f
   - **Auto-Enrichment Integration**: Automatically runs `enrichSheetDeals()` before processing deal posting.
   - **Network Resilience**: Catches `java.net.UnknownHostException` / DNS errors gracefully without thread crashes and sends an admin notification.
 - **File**: [`DailyDealFetcherScheduler.java`](file:///home/sudhakar/Kumaran/telegram-bot/src/main/java/com/example/telegram_bot/scheduler/DailyDealFetcherScheduler.java)
-  - **Automated Daily Products**: Scrapes and appends **10 top products daily** from Amazon Today's Deals at 8:00 AM (`0 0 8 * * ?`).
-  - **Configurable**: Configurable via `daily.deal.fetch.limit=10` and `daily.deal.fetch.cron` in `application.properties`.
+  - **Automated Daily Products**: Scrapes and appends **50 top products daily** from Amazon Today's Deals at 09:35 AM local time (`0 35 09 * * ?`).
+  - **Configurable**: Configurable via `daily.deal.fetch.limit=50`, `daily.deal.fetch.cron`, and `daily.deal.fetch.zone` in `application.properties`.
+- **File**: [`SocialMediaScheduleScheduler.java`](file:///home/sudhakar/Kumaran/telegram-bot/src/main/java/com/example/telegram_bot/scheduler/SocialMediaScheduleScheduler.java)
+  - **Automated Daily Facebook & Instagram Schedule**:
+    - **2 Offer Reels / Day**: Published at 11:30 AM IST and 07:30 PM IST on Facebook & Instagram.
+    - **1 Carousel Post / Day**: Published at 03:00 PM IST on Facebook & Instagram.
+    - **4 Stories / Day**: Published at 09:00 AM, 01:30 PM, 05:30 PM, and 09:30 PM IST on Facebook & Instagram.
+  - **Configurable Crons**: Configurable via `social.schedule.*` properties in `application.properties`.
 
-### 4. **Enhanced Post Formatting & Deal Rating Engine**
-- **File**: [`Deal.java`](file:///home/sudhakar/Kumaran/telegram-bot/src/main/java/com/example/telegram_bot/model/Deal.java)
+
+### 4. **Dynamic Deal Score & Intelligent Ranking Engine**
+- **File**: [`Deal.java`](file:///home/sudhakar/Kumaran/telegram-bot/src/main/java/com/example/telegram_bot/model/Deal.java) & [`DealScoreService.java`](file:///home/sudhakar/Kumaran/telegram-bot/src/main/java/com/example/telegram_bot/service/DealScoreService.java)
+  - **Dynamic Scoring Formula**:
+    $$\text{Deal Score} = \text{Discount \%} + \text{Price Attractiveness} + \text{Product Popularity} + \text{Category Demand} + \text{Previous Performance Score}$$
+  - **Score Breakdown**:
+    - **Discount %** (0 to 100 pts): Savings percentage from MRP.
+    - **Price Attractiveness** (0 to 30 pts): Higher score for impulse price points (< ₹500 = +30, < ₹1500 = +25, etc.).
+    - **Product Popularity** (0 to 25 pts): Brand detection (Apple, Samsung, Sony, Boat, Noise, Nike, Dell, etc.).
+    - **Category Demand** (0 to 25 pts): High conversion categories (Headphones/Mobiles = 25, Smartwatches/Laptops = 20).
+    - **Previous Performance Score** (0 to 20 pts): Historical performance weightage & freshness bonus.
+  - **Automated Prioritization**: Schedulers rank available deals by `Deal Score` and select top-scoring deals first for Reels, Carousels, and Stories.
+
+### 5. **Enhanced Post Formatting & Deal Rating Engine**
   - `calculateDiscountPercent()`: Calculates exact savings % from MRP vs Deal Price.
   - `getDealRatingBadge()`: Dynamically assigns Deal Rating Badges (e.g. `🔥 SUPER DEAL (65% OFF) 🌟🌟🌟🌟🌟`, `⚡ HOT DEAL (45% OFF) ⭐⭐⭐⭐`).
 - **File**: [`MessageFormatterService.java`](file:///home/sudhakar/Kumaran/telegram-bot/src/main/java/com/example/telegram_bot/service/MessageFormatterService.java)
@@ -68,12 +86,50 @@ This document captures the current implementation status and complete workflow f
   - `GET /api/deals/grouped`: Returns all Google Sheet deals grouped into categories.
   - `GET /api/deals/carousel-by-category?category=bluetooth`: Returns grouped products and formatted carousel payload.
   - `POST /api/deals/post-carousel?category=bluetooth`: Formats and posts a multi-slide Instagram Carousel post (`media_type=CAROUSEL` via Meta Graph API).
+  - `POST /api/deals/post-facebook`: Test endpoint to publish a deal to a Facebook Page on demand.
+  - `GET /api/deals/facebook-token-status`: Checks whether the configured Facebook Page Access Token is valid or expired.
+  - `GET /api/deals/schedule-status`: Checks live daily social schedule metrics (Reels: 2/day, Carousel: 1/day, Stories: 4/day).
+  - `POST /api/deals/post-reel`: Triggers an Offer Reel publication to Facebook & Instagram on demand.
+  - `POST /api/deals/post-story`: Triggers an Offer Story publication to Facebook & Instagram on demand.
+  - `GET /api/deals/ranked`: Returns all available deals in Google Sheet ranked by Deal Score with score breakdown.
+
+
 
 ### 7. **Chrome Extension**
 - **Folder**: [`chrome-extension/`](file:///home/sudhakar/Kumaran/telegram-bot/chrome-extension/)
 - **Files**:
   - `manifest.json`: Manifest V3 Chrome Extension definition.
   - `popup.html` & `popup.js`: Modern UI popup that captures active Amazon tab, extracts product details, and saves to Google Sheet with 1-click.
+
+---
+
+## 🔑 Resolving Facebook/Meta Token Expiration (`OAuthException 190, subcode 463`)
+
+When Meta Access Tokens expire, Facebook and Instagram Graph API requests fail. Follow these steps to generate a **Never-Expiring Page Access Token**:
+
+1. **Open Meta Graph API Explorer**:
+   - Go to [developers.facebook.com/tools/explorer/](https://developers.facebook.com/tools/explorer/)
+   - Select your Meta App and add permissions: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`.
+2. **Generate User Token & Select Page**:
+   - Click **Get User Access Token** and approve the prompt.
+   - Under **User or Page**, select your Facebook Page to generate a **Page Access Token**.
+3. **Exchange for Long-Lived User Token (60 days)**:
+   ```http
+   GET https://graph.facebook.com/v23.0/oauth/access_token?
+     grant_type=fb_exchange_token&
+     client_id={YOUR_APP_ID}&
+     client_secret={YOUR_APP_SECRET}&
+     fb_exchange_token={SHORT_LIVED_USER_TOKEN}
+   ```
+4. **Fetch Never-Expiring Page Access Token**:
+   - Query Meta Graph API using your long-lived user token:
+   ```http
+   GET https://graph.facebook.com/v23.0/{YOUR_PAGE_ID}?fields=access_token&access_token={LONG_LIVED_USER_TOKEN}
+   ```
+   - The returned `access_token` for your page **will never expire**!
+5. **Update Environment Variable**:
+   - Update `FACEBOOK_PAGE_ACCESS_TOKEN` on **Render.com** (or in `application.properties`).
+   - Verify token health via: `GET http://localhost:8080/api/deals/facebook-token-status`.
 
 ---
 
@@ -86,20 +142,26 @@ telegram.chat.id=@BOnlinediscount
 telegram.admin.chat.id=@BOnlinediscount
 
 google.sheet.id=1z3U5J2qDkRhXQ8muPtPazF0a_bSiX7fYVDO9uVUSlM0
-google.sheet.range=Sheet1!A2:G
+google.sheet.range=Sheet1!A2:H
 
 instagram.access-token=EAAPYjux20jkBSHLuEZBvw8ZBDi4no7OqTqRp0Cc88ZAycMLNPt1B3dNHaWmVvHQGJX6aCdyGHq8NpizZAvWSDifsVfLZANQs0NG823JSZB7Sj84cbxpyYk8YUU1TCdCWUANbHvOwoZC9wU8HjifMDtcNJJYwC3RJjMGU2rFMFvimafCotCFEZA6uQxviDwZAP
 instagram.business-id=17841409837583820
 
+# Facebook Page Configuration
+facebook.page.access-token=EAAPYjux20jkBS...
+facebook.page.id=4088491754782444
+facebook.enabled=true
+
 app.server.base-url=http://localhost:8080
 
-# Daily Deal Fetcher Configuration (Default: 10 deals daily at 8:00 AM)
+# Daily Deal Fetcher Configuration (Default: 10 deals daily at 11:10 AM IST)
 daily.deal.fetch.enabled=true
 daily.deal.fetch.limit=10
-daily.deal.fetch.cron=0 0 8 * * ?
+daily.deal.fetch.cron=0 10 11 * * ?
+daily.deal.fetch.zone=Asia/Kolkata
 
 # Amazon Associate Affiliate Tag (e.g. offerzone21-21)
-amazon.associate.tag=yourstoreid-21
+amazon.associate.tag=dealszone0a9-21
 ```
 
 ---
@@ -113,18 +175,21 @@ amazon.associate.tag=yourstoreid-21
 
 ### B. Testing Key Features via REST Endpoints
 ```bash
-# 1. Manually trigger 10 Daily Products Fetch to Google Sheet
+# 1. Check Facebook Page Access Token Status
+curl -X GET "http://localhost:8080/api/deals/facebook-token-status"
+
+# 2. Manually trigger 10 Daily Products Fetch to Google Sheet
 curl -X POST "http://localhost:8080/api/deals/daily-fetch?limit=10"
 
-# 2. Enrich incomplete Google Sheet rows (scrape missing price/title/image)
+# 3. Enrich incomplete Google Sheet rows (scrape missing price/title/image)
 curl -X POST "http://localhost:8080/api/deals/enrich-sheet"
 
-# 3. Add Amazon product by URL
+# 4. Add Amazon product by URL
 curl -X POST http://localhost:8080/api/deals/add-by-url \
   -H "Content-Type: application/json" \
   -d '{"url":"https://www.amazon.in/dp/B08N5WRWNW"}'
 
-# 4. Post multi-slide Instagram carousel by category
+# 5. Post multi-slide Instagram carousel by category
 curl -X POST "http://localhost:8080/api/deals/post-carousel?category=bluetooth"
 ```
 

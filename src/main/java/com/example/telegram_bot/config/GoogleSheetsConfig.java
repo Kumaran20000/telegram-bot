@@ -27,17 +27,14 @@ public class GoogleSheetsConfig {
         String credentialsJson = System.getenv("GOOGLE_CREDENTIALS_JSON");
 
         if (credentialsJson != null && !credentialsJson.isBlank()) {
-
-            InputStream stream = new ByteArrayInputStream(
-                    credentialsJson.getBytes(StandardCharsets.UTF_8));
-
+            credentialsJson = sanitizeCredentialsJson(credentialsJson);
+            InputStream stream = new ByteArrayInputStream(credentialsJson.getBytes(StandardCharsets.UTF_8));
             credentials = GoogleCredentials.fromStream(stream)
                     .createScoped(List.of("https://www.googleapis.com/auth/spreadsheets"));
 
             System.out.println("Loaded Google credentials from GOOGLE_CREDENTIALS_JSON environment variable.");
 
         } else {
-
             // 2. Fallback to local credentials.json
             InputStream stream = getClass()
                     .getClassLoader()
@@ -50,7 +47,10 @@ public class GoogleSheetsConfig {
                 );
             }
 
-            credentials = GoogleCredentials.fromStream(stream)
+            String rawJson = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            String sanitizedJson = sanitizeCredentialsJson(rawJson);
+
+            credentials = GoogleCredentials.fromStream(new ByteArrayInputStream(sanitizedJson.getBytes(StandardCharsets.UTF_8)))
                     .createScoped(List.of("https://www.googleapis.com/auth/spreadsheets"));
 
             System.out.println("Loaded Google credentials from local credentials.json.");
@@ -62,5 +62,25 @@ public class GoogleSheetsConfig {
                 new HttpCredentialsAdapter(credentials))
                 .setApplicationName(APPLICATION_NAME)
                 .build();
+    }
+
+    private String sanitizeCredentialsJson(String rawJson) {
+        if (rawJson == null || rawJson.isBlank()) return rawJson;
+        String json = rawJson.trim();
+
+        // Support Base64 encoded JSON string if provided in environment variable
+        if (!json.startsWith("{") && json.length() > 50) {
+            try {
+                byte[] decoded = java.util.Base64.getDecoder().decode(json);
+                json = new String(decoded, StandardCharsets.UTF_8);
+            } catch (Exception ignored) {}
+        }
+
+        // Replace literal "\\n" string representations with actual newline characters
+        if (json.contains("\\n")) {
+            json = json.replace("\\n", "\n");
+        }
+
+        return json;
     }
 }

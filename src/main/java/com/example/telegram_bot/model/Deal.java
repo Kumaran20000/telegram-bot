@@ -10,6 +10,14 @@ public class Deal {
     private String link;
     private String source;
 
+    // Deal Score Breakdown fields
+    private double dealScore;
+    private double discountScore;
+    private double priceAttractivenessScore;
+    private double productPopularityScore;
+    private double categoryDemandScore;
+    private double previousPerformanceScore;
+
     public Deal() {}
 
     public Deal(String title, String price, String image, String link, String source) {
@@ -41,6 +49,24 @@ public class Deal {
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
 
+    public double getDealScore() { return dealScore; }
+    public void setDealScore(double dealScore) { this.dealScore = dealScore; }
+
+    public double getDiscountScore() { return discountScore; }
+    public void setDiscountScore(double discountScore) { this.discountScore = discountScore; }
+
+    public double getPriceAttractivenessScore() { return priceAttractivenessScore; }
+    public void setPriceAttractivenessScore(double priceAttractivenessScore) { this.priceAttractivenessScore = priceAttractivenessScore; }
+
+    public double getProductPopularityScore() { return productPopularityScore; }
+    public void setProductPopularityScore(double productPopularityScore) { this.productPopularityScore = productPopularityScore; }
+
+    public double getCategoryDemandScore() { return categoryDemandScore; }
+    public void setCategoryDemandScore(double categoryDemandScore) { this.categoryDemandScore = categoryDemandScore; }
+
+    public double getPreviousPerformanceScore() { return previousPerformanceScore; }
+    public void setPreviousPerformanceScore(double previousPerformanceScore) { this.previousPerformanceScore = previousPerformanceScore; }
+
     public int calculateDiscountPercent() {
         if (discount != null && !discount.isEmpty()) {
             try {
@@ -71,6 +97,84 @@ public class Deal {
             } catch (Exception ignored) {}
         }
         return 0;
+    }
+
+    /**
+     * Calculates total Deal Score:
+     * Deal Score = Discount % + Price Attractiveness + Product Popularity + Category Demand + Previous Performance Score
+     */
+    public double computeDealScore(ProductCategory category, double prevPerfScore) {
+        // 1. Discount Score (0-100 pts)
+        this.discountScore = Math.min(calculateDiscountPercent(), 100);
+
+        // 2. Price Attractiveness Score (0-30 pts)
+        double pScore = 10;
+        try {
+            if (price != null && !price.isEmpty()) {
+                double numPrice = Double.parseDouble(price.replaceAll("[^0-9.]", ""));
+                if (numPrice <= 500) {
+                    pScore = 30; // Impulse buy sweet spot
+                } else if (numPrice <= 1500) {
+                    pScore = 25;
+                } else if (numPrice <= 3500) {
+                    pScore = 20;
+                } else if (numPrice <= 8000) {
+                    pScore = 15;
+                } else {
+                    pScore = 10;
+                }
+            }
+        } catch (Exception ignored) {}
+        this.priceAttractivenessScore = pScore;
+
+        // 3. Product Popularity Score (0-25 pts)
+        double popScore = 5;
+        if (title != null) {
+            String lowerTitle = title.toLowerCase();
+            if (lowerTitle.contains("apple") || lowerTitle.contains("samsung") || lowerTitle.contains("sony") ||
+                lowerTitle.contains("boat") || lowerTitle.contains("noise") || lowerTitle.contains("oneplus") ||
+                lowerTitle.contains("nike") || lowerTitle.contains("adidas") || lowerTitle.contains("puma") ||
+                lowerTitle.contains("dell") || lowerTitle.contains("hp") || lowerTitle.contains("asus") ||
+                lowerTitle.contains("lenovo") || lowerTitle.contains("realme") || lowerTitle.contains("redmi")) {
+                popScore += 15;
+            }
+            if (lowerTitle.contains("bestseller") || lowerTitle.contains("pro") || lowerTitle.contains("ultra") || lowerTitle.contains("wireless") || lowerTitle.contains("smartwatch") || lowerTitle.contains("earbuds")) {
+                popScore += 5;
+            }
+        }
+        this.productPopularityScore = Math.min(popScore, 25);
+
+        // 4. Category Demand Score (0-25 pts)
+        double catScore = 10;
+        if (category != null) {
+            switch (category) {
+                case HEADPHONE:
+                case MOBILE:
+                    catScore = 25;
+                    break;
+                case WATCH:
+                case LAPTOP:
+                    catScore = 20;
+                    break;
+                case SHOE:
+                    catScore = 15;
+                    break;
+                case HOME:
+                    catScore = 12;
+                    break;
+                default:
+                    catScore = 10;
+                    break;
+            }
+        }
+        this.categoryDemandScore = catScore;
+
+        // 5. Previous Performance Score (0-20 pts)
+        this.previousPerformanceScore = Math.min(Math.max(prevPerfScore, 0), 20);
+
+        // Total Deal Score
+        this.dealScore = this.discountScore + this.priceAttractivenessScore + this.productPopularityScore + this.categoryDemandScore + this.previousPerformanceScore;
+        return this.dealScore;
     }
 
     public String getDealRatingBadge() {

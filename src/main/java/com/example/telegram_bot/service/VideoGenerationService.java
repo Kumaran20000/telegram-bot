@@ -24,29 +24,35 @@ import com.example.telegram_bot.model.Deal;
 public class VideoGenerationService {
 
     public String createReel(Deal deal) throws Exception {
+        return createReel(deal, 0);
+    }
+
+    public String createReel(Deal deal, int formatIndex) throws Exception {
+        String hookBannerText = generateReelHookText(deal, formatIndex);
         return createReel(
                 deal.getImage(),
                 deal.getTitle(),
                 deal.getPrice(),
                 deal.getMrp(),
                 deal.calculateDiscountPercent(),
-                deal.calculateSavingsAmount()
+                deal.calculateSavingsAmount(),
+                hookBannerText
         );
     }
 
     public String createReel(String imageUrl) throws Exception {
-        return createReel(imageUrl, "🔥 TODAY'S TOP DEAL", "", null, 0, 0);
+        return createReel(imageUrl, "🔥 TODAY'S TOP DEAL", "", null, 0, 0, null);
     }
 
     public String createReel(String imageUrl, String titleText, String priceText) throws Exception {
-        return createReel(imageUrl, titleText, priceText, null, 0, 0);
+        return createReel(imageUrl, titleText, priceText, null, 0, 0, null);
     }
 
-    /**
-     * Generates a 9:16 vertical 1080x1920 Reel video with smooth Ken Burns animated zoom motion,
-     * dark gradient glassmorphism UI, savings badges, and clear comment CTAs for maximum engagement.
-     */
     public String createReel(String imageUrl, String titleText, String priceText, String mrpText, int discountPercent, long savingsAmount) throws Exception {
+        return createReel(imageUrl, titleText, priceText, mrpText, discountPercent, savingsAmount, null);
+    }
+
+    public String createReel(String imageUrl, String titleText, String priceText, String mrpText, int discountPercent, long savingsAmount, String hookBannerText) throws Exception {
 
         File outputDir = new File("generated");
         if (!outputDir.exists()) {
@@ -72,28 +78,108 @@ public class VideoGenerationService {
 
         recorder.start();
 
-        short[] silentAudio = new short[1470]; // 44100 / 30 = 1470 samples per frame
-
         int totalFrames = 150; // 5-second video (150 frames @ 30 FPS)
         for (int i = 0; i < totalFrames; i++) {
             double progress = (double) i / (double) totalFrames;
             // Ken Burns subtle zoom-in animation (100% to 108% scale)
             double zoomScale = 1.0 + (progress * 0.08);
 
-            BufferedImage canvas = renderReelFrame(productImage, titleText, priceText, mrpText, discountPercent, savingsAmount, zoomScale);
+            BufferedImage canvas = renderReelFrame(productImage, titleText, priceText, mrpText, discountPercent, savingsAmount, zoomScale, hookBannerText);
             Frame frame = converter.convert(canvas);
             recorder.record(frame);
-            recorder.recordSamples(java.nio.ShortBuffer.wrap(silentAudio));
+
+            // Record energetic upbeat background music audio track (1470 samples @ 44.1kHz per 30fps frame)
+            short[] audioBuffer = generateUpbeatAudioFrame(i, 1470);
+            recorder.recordSamples(java.nio.ShortBuffer.wrap(audioBuffer));
         }
 
         recorder.stop();
         recorder.release();
 
-        System.out.println("🎬 Dynamic 9:16 Animated Reel created successfully: " + output);
+        System.out.println("🎬 Dynamic 9:16 Animated Reel created successfully with Music & Hook [" + hookBannerText + "]: " + output);
         return output;
     }
 
-    private BufferedImage renderReelFrame(BufferedImage productImage, String titleText, String priceText, String mrpText, int discountPercent, long savingsAmount, double zoomScale) {
+    private short[] generateUpbeatAudioFrame(int frameIndex, int samplesPerFrame) {
+        short[] buffer = new short[samplesPerFrame];
+        double sampleRate = 44100.0;
+        // Energetic synth chord progression (C4, G4, Am4, F4)
+        double[] notes = {261.63, 329.63, 392.00, 523.25, 440.00, 349.23};
+        int currentStep = (frameIndex / 6) % notes.length;
+        double freq = notes[currentStep];
+
+        for (int s = 0; s < samplesPerFrame; s++) {
+            int sampleIdx = frameIndex * samplesPerFrame + s;
+            double t = sampleIdx / sampleRate;
+
+            // Melodic synth wave
+            double synth = Math.sin(2.0 * Math.PI * freq * t) * 0.25;
+            double oct = Math.sin(4.0 * Math.PI * (freq * 1.5) * t) * 0.15;
+
+            // Rhythmic kick/bass pulse every 0.25s (120 BPM beat)
+            double beatT = (sampleIdx % (int)(sampleRate * 0.25)) / sampleRate;
+            double kick = Math.sin(2.0 * Math.PI * 65.0 * beatT) * Math.exp(-beatT * 18.0) * 0.45;
+
+            // Mix together and clamp volume
+            double mixed = (synth + oct + kick) * 0.45;
+            buffer[s] = (short) (Math.max(-1.0, Math.min(1.0, mixed)) * 32767);
+        }
+        return buffer;
+    }
+
+    public String generateReelHookText(Deal deal, int formatIndex) {
+        if (deal == null) return "🔥 TODAY'S #1 STEAL DEAL 🔥";
+
+        int format = Math.abs(formatIndex) % 5;
+        String price = deal.getPrice() != null ? deal.getPrice().replaceAll("[^0-9.]", "") : "";
+        String mrp = deal.getMrp() != null ? deal.getMrp().replaceAll("[^0-9.]", "") : "";
+
+        switch (format) {
+            case 0:
+                // Format 1: Budget Find (Under ₹500 or Under ₹1,000)
+                double pVal = 0;
+                try { pVal = Double.parseDouble(price); } catch (Exception ignored) {}
+                if (pVal > 0 && pVal <= 500) {
+                    return "🔥 AMAZON FIND UNDER ₹500 🔥";
+                } else if (pVal > 0 && pVal <= 1000) {
+                    return "🔥 AMAZON FIND UNDER ₹1,000 🔥";
+                } else {
+                    return "🔥 UNBEATABLE BUDGET FIND 🔥";
+                }
+
+            case 1:
+                // Format 2: Extreme Price Slash (😱 ₹1,999 → ₹799)
+                if (!mrp.isEmpty() && !price.isEmpty() && !mrp.equals(price)) {
+                    return "😱 ₹" + mrp + " → ₹" + price + " 📉";
+                } else if (deal.calculateDiscountPercent() > 0) {
+                    return "😱 FLAT " + deal.calculateDiscountPercent() + "% PRICE DROP 🔥";
+                } else {
+                    return "😱 HUGE PRICE DROP STEAL 📉";
+                }
+
+            case 2:
+                // Format 3: Target Audience / Student Hook
+                return "🎓 MUST-HAVE FOR STUDENTS 👀";
+
+            case 3:
+                // Format 4: Viral Discovery Hook
+                return "👀 I DIDN'T KNOW THIS EXISTED 🔥";
+
+            case 4:
+                // Format 5: Category / Useful Home Showcase Hook
+                String titleLower = deal.getTitle() != null ? deal.getTitle().toLowerCase() : "";
+                if (titleLower.contains("home") || titleLower.contains("kitchen") || titleLower.contains("bottle") || titleLower.contains("clean")) {
+                    return "🏠 USEFUL PRODUCT FOR YOUR HOME 🏠";
+                } else {
+                    return "⚡ USEFUL DAILY ESSENTIAL FIND 🛍️";
+                }
+
+            default:
+                return "🔥 TODAY'S #1 STEAL DEAL 🔥";
+        }
+    }
+
+    private BufferedImage renderReelFrame(BufferedImage productImage, String titleText, String priceText, String mrpText, int discountPercent, long savingsAmount, double zoomScale, String hookBannerText) {
         BufferedImage canvas = new BufferedImage(1080, 1920, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = canvas.createGraphics();
 
@@ -106,14 +192,20 @@ public class VideoGenerationService {
         g.setPaint(bgGradient);
         g.fillRect(0, 0, 1080, 1920);
 
-        // 2. Top Banner Pill Badge (#FF385C Red Coral)
-        g.setColor(new Color(255, 56, 92));
+        // 2. Sleek Modern Indigo-Violet Gradient Top Banner Pill (No Red Background)
+        GradientPaint topPillGradient = new GradientPaint(90, 70, new Color(79, 70, 229), 990, 180, new Color(124, 58, 237));
+        g.setPaint(topPillGradient);
         g.fillRoundRect(90, 70, 900, 110, 50, 50);
 
+        // Gold Accent Border
+        g.setColor(new Color(255, 214, 10, 180));
+        g.setStroke(new java.awt.BasicStroke(3.0f));
+        g.drawRoundRect(90, 70, 900, 110, 50, 50);
+
         g.setColor(Color.WHITE);
-        g.setFont(new Font("SansSerif", Font.BOLD, 46));
+        g.setFont(new Font("SansSerif", Font.BOLD, 44));
         FontMetrics fmTop = g.getFontMetrics();
-        String topText = "🔥 TODAY'S #1 STEAL DEAL 🔥";
+        String topText = (hookBannerText != null && !hookBannerText.isEmpty()) ? hookBannerText : "🔥 TODAY'S #1 STEAL DEAL 🔥";
         int topX = (1080 - fmTop.stringWidth(topText)) / 2;
         g.drawString(topText, topX, 140);
 
@@ -163,6 +255,23 @@ public class VideoGenerationService {
             g.drawString("⚡ " + badgeText, cardX + 50, cardY + 83);
         }
 
+        // Automatic Brand Badge Overlay (Top Right of Reel Product Card)
+        BrandBadge brandReel = detectBrandBadge(titleText);
+        if (brandReel != null) {
+            g.setFont(new Font("SansSerif", Font.BOLD, 34));
+            FontMetrics fmBrand = g.getFontMetrics();
+            int badgeW = fmBrand.stringWidth(brandReel.getName()) + 40;
+            int badgeH = 75;
+            int badgeX = (cardX + baseCardW) - badgeW - 30;
+            int badgeY = cardY + 30;
+
+            g.setColor(brandReel.getBgColor());
+            g.fillRoundRect(badgeX, badgeY, badgeW, badgeH, 24, 24);
+
+            g.setColor(brandReel.getTextColor());
+            g.drawString(brandReel.getName(), badgeX + 20, badgeY + 50);
+        }
+
         // 6. Title Text Below Card
         if (titleText != null && !titleText.isEmpty()) {
             g.setColor(Color.WHITE);
@@ -170,23 +279,65 @@ public class VideoGenerationService {
             drawWrappedString(g, titleText, 90, 1140, 900, 54, 3);
         }
 
-        // 7. Price Pill Badge (Vibrant Emerald Green #10B981)
-        if (priceText != null && !priceText.isEmpty()) {
-            g.setColor(new Color(16, 185, 129));
+        // 7. Price Pill Badge with Original Price (MRP) & Offer Price
+        if (priceText != null && !priceText.isEmpty() && !priceText.equalsIgnoreCase("N/A")) {
+            g.setColor(new Color(16, 185, 129)); // Vibrant Emerald Green #10B981
             g.fillRoundRect(90, 1400, 900, 140, 50, 50);
 
-            g.setColor(Color.WHITE);
-            g.setFont(new Font("SansSerif", Font.BOLD, 52));
+            String formattedOfferPrice = priceText.startsWith("₹") ? priceText : "₹" + priceText;
+            String offerText = "OFFER PRICE: " + formattedOfferPrice;
 
-            String formattedPrice = priceText.startsWith("₹") ? priceText : "₹" + priceText;
-            String priceLine = "PRICE: " + formattedPrice;
+            String mrpValStr = null;
             if (mrpText != null && !mrpText.isEmpty() && !mrpText.equalsIgnoreCase("N/A")) {
-                priceLine += "  (MRP ₹" + mrpText + ")";
+                mrpValStr = mrpText.startsWith("₹") ? mrpText : "₹" + mrpText;
+            } else if (discountPercent > 0) {
+                try {
+                    double p = Double.parseDouble(priceText.replaceAll("[^0-9.]", ""));
+                    long calcMrp = Math.round(p / (1.0 - (discountPercent / 100.0)));
+                    if (calcMrp > p) {
+                        mrpValStr = "₹" + String.format("%,d", calcMrp);
+                    }
+                } catch (Exception ignored) {}
             }
 
-            FontMetrics fmPrice = g.getFontMetrics();
-            int px = (1080 - fmPrice.stringWidth(priceLine)) / 2;
-            g.drawString(priceLine, px, 1488);
+            if (mrpValStr != null && !mrpValStr.isEmpty()) {
+                g.setFont(new Font("SansSerif", Font.BOLD, 36));
+                FontMetrics fmMrp = g.getFontMetrics();
+                String mrpLabel = "MRP: ";
+                String mrpFull = mrpLabel + mrpValStr;
+
+                g.setFont(new Font("SansSerif", Font.BOLD, 46));
+                FontMetrics fmOffer = g.getFontMetrics();
+
+                int totalW = fmMrp.stringWidth(mrpFull) + 40 + fmOffer.stringWidth(offerText);
+                int startX = (1080 - totalW) / 2;
+
+                // Draw MRP Label & Value
+                g.setFont(new Font("SansSerif", Font.BOLD, 36));
+                g.setColor(new Color(220, 252, 231)); // Soft Mint Light Text
+                int mrpY = 1485;
+                g.drawString(mrpFull, startX, mrpY);
+
+                // Strikethrough line over MRP value
+                int mrpValueX = startX + fmMrp.stringWidth(mrpLabel);
+                int mrpValW = fmMrp.stringWidth(mrpValStr);
+                g.setColor(new Color(239, 68, 68)); // Bright Red Strikethrough
+                java.awt.Stroke oldStroke = g.getStroke();
+                g.setStroke(new java.awt.BasicStroke(4.0f));
+                g.drawLine(mrpValueX - 2, mrpY - 12, mrpValueX + mrpValW + 2, mrpY - 12);
+                g.setStroke(oldStroke);
+
+                // Draw OFFER PRICE
+                g.setFont(new Font("SansSerif", Font.BOLD, 46));
+                g.setColor(Color.WHITE);
+                g.drawString(offerText, startX + fmMrp.stringWidth(mrpFull) + 40, mrpY + 2);
+            } else {
+                g.setColor(Color.WHITE);
+                g.setFont(new Font("SansSerif", Font.BOLD, 50));
+                FontMetrics fmPrice = g.getFontMetrics();
+                int px = (1080 - fmPrice.stringWidth(offerText)) / 2;
+                g.drawString(offerText, px, 1488);
+            }
         }
 
         // 8. Interactive Call-To-Action Pill at Bottom
@@ -214,16 +365,53 @@ public class VideoGenerationService {
 
     // Generate a 1:1 (1080x1080) Square Image guaranteed to pass Instagram's aspect ratio requirements
     public String createPostImage(Deal deal) throws Exception {
-        return createPostImage(deal.getImage(), deal.getTitle(), deal.getPrice());
+        return createPostImage(deal, "generated/post_image.jpg");
+    }
+
+    public String createPostImage(Deal deal, String outputPath) throws Exception {
+        return createPostImage(
+                deal.getImage(),
+                deal.getTitle(),
+                deal.getPrice(),
+                deal.getMrp(),
+                deal.calculateDiscountPercent(),
+                deal.calculateSavingsAmount(),
+                outputPath
+        );
     }
 
     public String createPostImage(String imageUrl, String titleText, String priceText) throws Exception {
+        return createPostImage(imageUrl, titleText, priceText, null, 0, 0, "generated/post_image.jpg");
+    }
+
+    public String createPostImage(String imageUrl, String titleText, String priceText, String mrpText, int discountPercent, long savingsAmount) throws Exception {
+        return createPostImage(imageUrl, titleText, priceText, mrpText, discountPercent, savingsAmount, "generated/post_image.jpg");
+    }
+
+    public String createPostImage(String imageUrl, String titleText, String priceText, String mrpText, int discountPercent, long savingsAmount, String outputPath) throws Exception {
         File outputDir = new File("generated");
         if (!outputDir.exists()) {
             outputDir.mkdirs();
         }
 
-        String outputPath = "generated/post_image.jpg";
+        BufferedImage canvas = renderPostImage(imageUrl, titleText, priceText, mrpText, discountPercent, savingsAmount);
+        ImageIO.write(canvas, "jpg", new File(outputPath));
+        System.out.println("Formatted post image with Price & Offer Price created successfully: " + outputPath);
+        return outputPath;
+    }
+
+    public BufferedImage renderPostImage(Deal deal) throws Exception {
+        return renderPostImage(
+                deal.getImage(),
+                deal.getTitle(),
+                deal.getPrice(),
+                deal.getMrp(),
+                deal.calculateDiscountPercent(),
+                deal.calculateSavingsAmount()
+        );
+    }
+
+    public BufferedImage renderPostImage(String imageUrl, String titleText, String priceText, String mrpText, int discountPercent, long savingsAmount) throws Exception {
         BufferedImage productImage = loadImage(imageUrl);
 
         // 1:1 Aspect Ratio Canvas (1080x1080) - Guaranteed compatible with Instagram Feed
@@ -241,18 +429,18 @@ public class VideoGenerationService {
 
         // Top Banner
         g.setColor(new Color(255, 56, 92));
-        g.fillRoundRect(90, 30, 900, 90, 40, 40);
+        g.fillRoundRect(90, 30, 900, 80, 40, 40);
 
         g.setColor(Color.WHITE);
-        g.setFont(new Font("SansSerif", Font.BOLD, 42));
+        g.setFont(new Font("SansSerif", Font.BOLD, 38));
         FontMetrics fmTop = g.getFontMetrics();
-        String topText = "🔥 HOT DEAL ALERT 🔥";
+        String topText = "🔥 TODAY'S SPECIAL OFFER 🔥";
         int topX = (1080 - fmTop.stringWidth(topText)) / 2;
-        g.drawString(topText, topX, 90);
+        g.drawString(topText, topX, 82);
 
-        // Resize Product Image (Max 600x600)
-        int maxWidth = 600;
-        int maxHeight = 600;
+        // Resize Product Image (Max 520x520)
+        int maxWidth = 520;
+        int maxHeight = 520;
 
         double scale = Math.min(
                 (double) maxWidth / productImage.getWidth(),
@@ -265,37 +453,129 @@ public class VideoGenerationService {
         Image scaled = productImage.getScaledInstance(width, height, Image.SCALE_SMOOTH);
 
         int imgX = (1080 - width) / 2;
-        int imgY = 130 + (maxHeight - height) / 2;
+        int imgY = 125 + (maxHeight - height) / 2;
 
         g.setColor(Color.WHITE);
         g.fillRoundRect(imgX - 10, imgY - 10, width + 20, height + 20, 20, 20);
         g.drawImage(scaled, imgX, imgY, null);
 
+        // Discount Badge Callout Overlay
+        if (discountPercent > 0) {
+            g.setColor(new Color(234, 88, 12)); // Bright Orange
+            g.fillRoundRect(imgX + 15, imgY + 15, 220, 60, 20, 20);
+
+            g.setColor(Color.WHITE);
+            g.setFont(new Font("SansSerif", Font.BOLD, 28));
+            g.drawString("⚡ " + discountPercent + "% OFF", imgX + 30, imgY + 55);
+        }
+
+        // Automatic Brand Badge Overlay (Top Right of Product Card)
+        BrandBadge brand = detectBrandBadge(titleText);
+        if (brand != null) {
+            g.setFont(new Font("SansSerif", Font.BOLD, 26));
+            FontMetrics fmBrand = g.getFontMetrics();
+            int badgeW = fmBrand.stringWidth(brand.getName()) + 32;
+            int badgeH = 55;
+            int badgeX = (imgX + width + 10) - badgeW - 15;
+            int badgeY = imgY + 15;
+
+            // Background Shadow
+            g.setColor(new Color(0, 0, 0, 40));
+            g.fillRoundRect(badgeX - 1, badgeY - 1, badgeW + 2, badgeH + 2, 18, 18);
+
+            // Pill Background
+            g.setColor(brand.getBgColor());
+            g.fillRoundRect(badgeX, badgeY, badgeW, badgeH, 18, 18);
+
+            // Brand Text
+            g.setColor(brand.getTextColor());
+            g.drawString(brand.getName(), badgeX + 16, badgeY + 38);
+        }
+
         // Title Text Below Image
         if (titleText != null && !titleText.isEmpty()) {
             g.setColor(Color.WHITE);
-            g.setFont(new Font("SansSerif", Font.BOLD, 36));
-            drawWrappedString(g, titleText, 60, 770, 960, 44, 3);
+            g.setFont(new Font("SansSerif", Font.BOLD, 34));
+            drawWrappedString(g, titleText, 60, 695, 960, 42, 2);
         }
 
-        // Price Badge
-        if (priceText != null && !priceText.isEmpty()) {
-            g.setColor(new Color(16, 185, 129));
-            g.fillRoundRect(140, 920, 800, 110, 30, 30);
+        // Price Badge Section with Price (MRP / Original Price) and Offer Price
+        if (priceText != null && !priceText.isEmpty() && !priceText.equalsIgnoreCase("N/A")) {
+            int boxX = 60;
+            int boxY = 870;
+            int boxW = 960;
+            int boxH = 140;
 
-            g.setColor(Color.WHITE);
-            g.setFont(new Font("SansSerif", Font.BOLD, 46));
-            String formattedPrice = priceText.startsWith("₹") ? priceText : "PRICE: ₹" + priceText;
-            FontMetrics fm = g.getFontMetrics();
-            int textX = (1080 - fm.stringWidth(formattedPrice)) / 2;
-            g.drawString(formattedPrice, textX, 990);
+            // Sleek Rounded Emerald Card Background
+            g.setColor(new Color(16, 185, 129)); // #10B981 Emerald Green
+            g.fillRoundRect(boxX, boxY, boxW, boxH, 40, 40);
+
+            String formattedOfferPrice = priceText.startsWith("₹") ? priceText : "₹" + priceText;
+            String offerText = "OFFER PRICE: " + formattedOfferPrice;
+
+            String mrpValStr = null;
+            if (mrpText != null && !mrpText.isEmpty() && !mrpText.equalsIgnoreCase("N/A")) {
+                mrpValStr = mrpText.startsWith("₹") ? mrpText : "₹" + mrpText;
+            } else if (discountPercent > 0) {
+                try {
+                    double p = Double.parseDouble(priceText.replaceAll("[^0-9.]", ""));
+                    long calcMrp = Math.round(p / (1.0 - (discountPercent / 100.0)));
+                    if (calcMrp > p) {
+                        mrpValStr = "₹" + String.format("%,d", calcMrp);
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            if (mrpValStr != null && !mrpValStr.isEmpty()) {
+                g.setFont(new Font("SansSerif", Font.BOLD, 36));
+                FontMetrics fmMrpLabel = g.getFontMetrics();
+                String mrpLabel = "MRP: ";
+                String mrpFull = mrpLabel + mrpValStr;
+
+                g.setFont(new Font("SansSerif", Font.BOLD, 46));
+                FontMetrics fmOffer = g.getFontMetrics();
+
+                int totalWidth = fmMrpLabel.stringWidth(mrpFull) + 40 + fmOffer.stringWidth(offerText);
+                int startX = (1080 - totalWidth) / 2;
+
+                // Draw MRP Label & Value
+                g.setFont(new Font("SansSerif", Font.BOLD, 36));
+                g.setColor(new Color(220, 252, 231)); // Soft Mint Light Text
+                int mrpY = boxY + 85;
+                g.drawString(mrpFull, startX, mrpY);
+
+                // Draw Red Strikethrough Line across MRP Value
+                int mrpValueStartX = startX + fmMrpLabel.stringWidth(mrpLabel);
+                int mrpValueWidth = fmMrpLabel.stringWidth(mrpValStr);
+                g.setColor(new Color(239, 68, 68)); // Bright Red Strikethrough
+                java.awt.Stroke oldStroke = g.getStroke();
+                g.setStroke(new java.awt.BasicStroke(4.0f));
+                g.drawLine(mrpValueStartX - 2, mrpY - 12, mrpValueStartX + mrpValueWidth + 2, mrpY - 12);
+                g.setStroke(oldStroke);
+
+                // Draw Offer Price
+                g.setFont(new Font("SansSerif", Font.BOLD, 46));
+                g.setColor(Color.WHITE);
+                g.drawString(offerText, startX + fmMrpLabel.stringWidth(mrpFull) + 40, mrpY + 2);
+            } else {
+                g.setColor(Color.WHITE);
+                g.setFont(new Font("SansSerif", Font.BOLD, 48));
+                FontMetrics fm = g.getFontMetrics();
+                int textX = (1080 - fm.stringWidth(offerText)) / 2;
+                g.drawString(offerText, textX, boxY + 88);
+            }
         }
+
+        // Account Handle Footer
+        g.setColor(new Color(148, 163, 184)); // Slate Grey
+        g.setFont(new Font("SansSerif", Font.BOLD, 28));
+        String handleText = "❤️ Follow @offerzone2538 | Telegram: @BOnlinediscount";
+        FontMetrics fmHandle = g.getFontMetrics();
+        int handleX = (1080 - fmHandle.stringWidth(handleText)) / 2;
+        g.drawString(handleText, handleX, 1045);
 
         g.dispose();
-
-        ImageIO.write(canvas, "jpg", new File(outputPath));
-        System.out.println("Formatted post image created successfully: " + outputPath);
-        return outputPath;
+        return canvas;
     }
 
     private BufferedImage loadImage(String imageUrl) throws Exception {
@@ -361,5 +641,79 @@ public class VideoGenerationService {
         if (currentLine.length() > 0 && lineCount < maxLines) {
             g.drawString(currentLine.toString(), x, y);
         }
+    }
+
+    public static class BrandBadge {
+        private final String name;
+        private final Color bgColor;
+        private final Color textColor;
+
+        public BrandBadge(String name, Color bgColor, Color textColor) {
+            this.name = name;
+            this.bgColor = bgColor;
+            this.textColor = textColor;
+        }
+
+        public String getName() { return name; }
+        public Color getBgColor() { return bgColor; }
+        public Color getTextColor() { return textColor; }
+    }
+
+    public BrandBadge detectBrandBadge(String titleText) {
+        if (titleText == null || titleText.trim().isEmpty()) return null;
+        String lower = titleText.toLowerCase();
+
+        if (lower.contains("apple") || lower.contains("iphone") || lower.contains("macbook") || lower.contains("ipad") || lower.contains("airpods")) {
+            return new BrandBadge("🍎 APPLE", new Color(15, 23, 42), Color.WHITE);
+        } else if (lower.contains("samsung") || lower.contains("galaxy")) {
+            return new BrandBadge("📱 SAMSUNG", new Color(3, 78, 162), Color.WHITE);
+        } else if (lower.contains("sony") || lower.contains("playstation") || lower.contains("bravia")) {
+            return new BrandBadge("🎧 SONY", new Color(0, 0, 0), Color.WHITE);
+        } else if (lower.contains("boat") || lower.contains("airdopes") || lower.contains("rockerz")) {
+            return new BrandBadge("⚡ boAt", new Color(225, 25, 50), Color.WHITE);
+        } else if (lower.contains("noise") || lower.contains("colorfit")) {
+            return new BrandBadge("🔥 NOISE", new Color(0, 102, 255), Color.WHITE);
+        } else if (lower.contains("oneplus") || lower.contains("nord")) {
+            return new BrandBadge("⚡ ONEPLUS", new Color(240, 0, 0), Color.WHITE);
+        } else if (lower.contains("realme")) {
+            return new BrandBadge("🟡 REALME", new Color(255, 199, 0), new Color(15, 23, 42));
+        } else if (lower.contains("redmi") || lower.contains("xiaomi") || lower.contains("mi ")) {
+            return new BrandBadge("🍊 XIAOMI", new Color(255, 103, 0), Color.WHITE);
+        } else if (lower.contains("nike")) {
+            return new BrandBadge("✔️ NIKE", new Color(17, 17, 17), Color.WHITE);
+        } else if (lower.contains("adidas")) {
+            return new BrandBadge("👟 ADIDAS", new Color(15, 23, 42), Color.WHITE);
+        } else if (lower.contains("puma")) {
+            return new BrandBadge("🐾 PUMA", new Color(186, 32, 38), Color.WHITE);
+        } else if (lower.contains("dell")) {
+            return new BrandBadge("💻 DELL", new Color(0, 118, 206), Color.WHITE);
+        } else if (lower.contains("hp") || lower.contains("pavilion") || lower.contains("victus")) {
+            return new BrandBadge("💻 HP", new Color(0, 150, 214), Color.WHITE);
+        } else if (lower.contains("asus") || lower.contains("rog") || lower.contains("tuf")) {
+            return new BrandBadge("🎮 ASUS", new Color(0, 83, 155), Color.WHITE);
+        } else if (lower.contains("lenovo") || lower.contains("ideapad") || lower.contains("thinkpad")) {
+            return new BrandBadge("💻 LENOVO", new Color(226, 35, 26), Color.WHITE);
+        } else if (lower.contains("ptron")) {
+            return new BrandBadge("⚡ pTron", new Color(220, 38, 38), Color.WHITE);
+        } else if (lower.contains("jbl")) {
+            return new BrandBadge("🔊 JBL", new Color(255, 102, 0), Color.WHITE);
+        } else if (lower.contains("zebronics")) {
+            return new BrandBadge("🔊 ZEBRONICS", new Color(37, 99, 235), Color.WHITE);
+        } else if (lower.contains("boult")) {
+            return new BrandBadge("⚡ BOUULT", new Color(124, 58, 237), Color.WHITE);
+        } else if (lower.contains("fastrack")) {
+            return new BrandBadge("⌚ FASTRACK", new Color(234, 88, 12), Color.WHITE);
+        } else if (lower.contains("fire-boltt") || lower.contains("fireboltt")) {
+            return new BrandBadge("⚡ FIRE-BOLTT", new Color(220, 38, 38), Color.WHITE);
+        } else if (lower.contains("lg")) {
+            return new BrandBadge("📺 LG", new Color(165, 0, 52), Color.WHITE);
+        } else if (lower.contains("logitech")) {
+            return new BrandBadge("🖱️ LOGITECH", new Color(0, 184, 252), Color.WHITE);
+        } else if (lower.contains("canon")) {
+            return new BrandBadge("📷 CANON", new Color(204, 0, 0), Color.WHITE);
+        } else if (lower.contains("casio") || lower.contains("g-shock") || lower.contains("gshock")) {
+            return new BrandBadge("⌚ CASIO", new Color(0, 51, 153), Color.WHITE);
+        }
+        return null;
     }
 }

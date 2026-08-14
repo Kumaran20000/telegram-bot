@@ -23,6 +23,9 @@ public class DealController {
     private final AmazonSiteStripeService siteStripeService;
     private final CaptionService captionService;
     private final CarouselService carouselService;
+    private final com.example.telegram_bot.service.FacebookPageService facebookPageService;
+    private final com.example.telegram_bot.scheduler.SocialMediaScheduleScheduler socialMediaScheduleScheduler;
+    private final com.example.telegram_bot.service.DealScoreService dealScoreService;
 
     @Data
     public static class SiteStripeRequest {
@@ -293,6 +296,104 @@ public class DealController {
             response.put("telegramPosted", telegramResult);
             response.put("instagramPosted", instagramResult);
             response.put("message", "Accumulated top " + limit + " deals for category '" + category + "' and processed posting.");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("status", "ERROR");
+            error.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    /**
+     * Test endpoint to publish a deal to a Facebook Page on demand.
+     */
+    @PostMapping("/post-facebook")
+    public ResponseEntity<?> postToFacebook(@RequestBody(required = false) SiteStripeRequest request) {
+        try {
+            Deal deal;
+            if (request != null && (request.getUrl() != null || request.getLink() != null)) {
+                String targetUrl = request.getUrl() != null ? request.getUrl() : request.getLink();
+                deal = siteStripeService.processAndSaveSiteStripe(targetUrl, request.getTitle(), request.getPrice(), request.getImage());
+            } else {
+                deal = new Deal();
+                deal.setTitle((request != null && request.getTitle() != null) ? request.getTitle() : "Sample Amazon Deal");
+                deal.setPrice((request != null && request.getPrice() != null) ? request.getPrice() : "999");
+                deal.setImage((request != null && request.getImage() != null) ? request.getImage() : "https://dummyimage.com/600x600/ffffff/000000.jpg&text=Amazon+Deal");
+                deal.setLink((request != null && request.getLink() != null) ? request.getLink() : "https://www.amazon.in");
+                deal.setSource("Amazon");
+            }
+
+            boolean posted = facebookPageService.publish(deal);
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", posted ? "SUCCESS" : "FAILED");
+            response.put("platform", "Facebook Page");
+            response.put("deal", deal);
+            response.put("message", posted ? "Successfully posted to Facebook Page" : "Failed to post to Facebook Page (check page ID / access token)");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("status", "ERROR");
+            error.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
+
+    /**
+     * Diagnostic endpoint to check Facebook Page Access Token status.
+     */
+    @GetMapping("/facebook-token-status")
+    public ResponseEntity<?> checkFacebookTokenStatus() {
+        return ResponseEntity.ok(facebookPageService.checkTokenStatus());
+    }
+
+    /**
+     * Diagnostic endpoint to check daily social media schedule status & progress metrics.
+     */
+    @GetMapping("/schedule-status")
+    public ResponseEntity<?> getScheduleStatus() {
+        return ResponseEntity.ok(socialMediaScheduleScheduler.getScheduleMetrics());
+    }
+
+    /**
+     * Trigger an Offer Reel to Facebook & Instagram on demand.
+     */
+    @PostMapping("/post-reel")
+    public ResponseEntity<?> triggerReelPost(@RequestParam(defaultValue = "Manual API Trigger") String slotLabel) {
+        boolean success = socialMediaScheduleScheduler.triggerReelPosting(slotLabel);
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", success ? "SUCCESS" : "FAILED");
+        response.put("message", success ? "Offer Reel successfully generated and posted to Facebook & Instagram!" : "Failed to post Offer Reel (check logs/credentials)");
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Trigger an Offer Story to Facebook & Instagram on demand.
+     */
+    @PostMapping("/post-story")
+    public ResponseEntity<?> triggerStoryPost(@RequestParam(defaultValue = "Manual API Trigger") String slotLabel) {
+        boolean success = socialMediaScheduleScheduler.triggerStoryPosting(slotLabel);
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", success ? "SUCCESS" : "FAILED");
+        response.put("message", success ? "Offer Story successfully posted to Facebook & Instagram!" : "Failed to post Offer Story (check logs/credentials)");
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Get all Google Sheet deals ranked by Deal Score with score breakdown.
+     * Formula: Deal Score = Discount % + Price Attractiveness + Product Popularity + Category Demand + Previous Performance Score
+     */
+    @GetMapping("/ranked")
+    public ResponseEntity<?> getDealsRankedByScore() {
+        try {
+            List<Deal> deals = carouselService.getDealsForCategoryName("");
+            List<Deal> rankedDeals = dealScoreService.rankDeals(deals);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "SUCCESS");
+            response.put("formula", "Deal Score = Discount % + Price Attractiveness + Product Popularity + Category Demand + Previous Performance Score");
+            response.put("count", rankedDeals.size());
+            response.put("rankedDeals", rankedDeals);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();

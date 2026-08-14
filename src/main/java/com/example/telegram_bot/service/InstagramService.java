@@ -21,9 +21,31 @@ public class InstagramService {
     private final RestTemplate restTemplate;
     private final InstagramConfig instagramConfig;
     private final CaptionService captionService;
+    private final VideoGenerationService videoGenerationService;
 
-    // Main method to publish static image post using deal's image URL
+    @org.springframework.beans.factory.annotation.Value("${app.server.base-url:http://localhost:8080}")
+    private String serverBaseUrl;
+
+    // Main method to publish static image post using deal's formatted image URL (with Price & Offer Price overlay)
     public boolean publish(Deal deal) {
+        if (deal == null) return false;
+        try {
+            if (videoGenerationService != null) {
+                videoGenerationService.createPostImage(deal);
+            }
+            boolean isLocalServer = serverBaseUrl == null || serverBaseUrl.contains("localhost") || serverBaseUrl.contains("127.0.0.1");
+            if (!isLocalServer) {
+                String formattedImageUrl = serverBaseUrl + "/video/image/stream";
+                System.out.println("Publishing 1:1 post image with Price & Offer Price overlay: " + formattedImageUrl);
+                boolean success = publish(deal, formattedImageUrl);
+                if (success) return true;
+            } else {
+                System.out.println("⚠️ Warning: 'app.server.base-url' is set to localhost (" + serverBaseUrl + ").");
+                System.out.println("⚠️ Meta Instagram API cannot pull local images directly from localhost. Run 'ngrok http 8080' or deploy to Render to send price overlay images.");
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ Warning: Could not pre-generate 1:1 post image with price overlay: " + e.getMessage());
+        }
         return publish(deal, deal.getImage());
     }
 
@@ -251,21 +273,45 @@ public class InstagramService {
         return false;
     }
 
-    // Publish Instagram media (Images & Reels)
+    // Publish Instagram media (Images, Reels & Carousels) with readiness polling & exception handling
     private boolean publishMedia(String creationId) {
         String url = "https://graph.facebook.com/v23.0/" + instagramConfig.getBusinessId() + "/media_publish";
 
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("creation_id", creationId);
-        body.add("access_token", instagramConfig.getAccessToken());
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("creation_id", creationId);
+        body.put("access_token", instagramConfig.getAccessToken());
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
-        ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
-        return response.getStatusCode().is2xxSuccessful();
+        int maxRetries = 5;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    return true;
+                }
+            } catch (org.springframework.web.client.HttpClientErrorException e) {
+                String errorBody = e.getResponseBodyAsString();
+                System.out.println("Instagram Publish API Attempt [" + (i + 1) + "] Status (" + e.getStatusCode() + "): " + errorBody);
+
+                // If error indicates media is still processing (e.g. error code 2207027 "Media ID is not ready to publish")
+                if (errorBody.contains("2207027") || errorBody.toLowerCase().contains("not ready") || errorBody.toLowerCase().contains("in_progress")) {
+                    System.out.println("⏳ Media container [" + creationId + "] is still processing on Meta servers. Retrying in 3 seconds...");
+                    try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+                    continue;
+                } else {
+                    System.out.println("❌ Instagram Publish API Error: " + errorBody);
+                    return false;
+                }
+            } catch (Exception e) {
+                System.out.println("❌ Instagram Publish Error: " + e.getMessage());
+                return false;
+            }
+        }
+        return false;
     }
 
     /**
@@ -279,14 +325,30 @@ public class InstagramService {
         try {
             System.out.println("Starting Instagram Carousel upload with " + deals.size() + " items...");
 
+            boolean isLocalServer = serverBaseUrl == null || serverBaseUrl.contains("localhost") || serverBaseUrl.contains("127.0.0.1");
             java.util.List<String> childContainerIds = new java.util.ArrayList<>();
+            int slideIndex = 0;
             for (Deal deal : deals) {
                 if (childContainerIds.size() >= 10) break; // Instagram Carousel supports max 10 slides
                 String imageUrl = deal.getImage();
                 if (imageUrl == null || !imageUrl.startsWith("http")) continue;
 
-                // Create child container for carousel item
-                String childId = createCarouselItemContainer(imageUrl);
+                // Pre-generate 1:1 post image with title, discount badge, MRP and Offer Price for carousel slide
+                String slideUrl = imageUrl;
+                try {
+                    if (videoGenerationService != null) {
+                        videoGenerationService.createPostImage(deal, "generated/carousel_slide_" + slideIndex + ".jpg");
+                        if (!isLocalServer) {
+                            slideUrl = serverBaseUrl + "/video/carousel-image/" + slideIndex;
+                        }
+                    }
+                } catch (Exception e) {
+                    System.out.println("⚠️ Warning: Could not pre-generate carousel slide image: " + e.getMessage());
+                }
+                slideIndex++;
+
+                // Create child container for carousel item with proxied image URL
+                String childId = createCarouselItemContainer(slideUrl);
                 if (childId != null) {
                     childContainerIds.add(childId);
                 }
@@ -314,22 +376,26 @@ public class InstagramService {
         }
     }
 
-    private String createCarouselItemContainer(String imageUrl) {
+    private String createCarouselItemContainer(String rawImageUrl) {
         String url = "https://graph.facebook.com/v23.0/" + instagramConfig.getBusinessId() + "/media";
+        String targetImageUrl = getProxiedImageUrl(rawImageUrl);
 
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("image_url", imageUrl);
-        body.add("is_carousel_item", "true");
-        body.add("access_token", instagramConfig.getAccessToken());
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("image_url", targetImageUrl);
+        body.put("is_carousel_item", true);
+        body.put("access_token", instagramConfig.getAccessToken());
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
         try {
             ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
             Map<String, Object> responseBody = response.getBody();
             return responseBody != null && responseBody.get("id") != null ? responseBody.get("id").toString() : null;
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            System.out.println("Error creating carousel item container (" + e.getStatusCode() + "): " + e.getResponseBodyAsString());
+            return null;
         } catch (Exception e) {
             System.out.println("Error creating carousel item container: " + e.getMessage());
             return null;
@@ -339,25 +405,103 @@ public class InstagramService {
     private String createCarouselParentContainer(java.util.List<String> childrenIds, String caption) {
         String url = "https://graph.facebook.com/v23.0/" + instagramConfig.getBusinessId() + "/media";
 
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("media_type", "CAROUSEL");
-        body.add("children", String.join(",", childrenIds));
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("media_type", "CAROUSEL");
+        body.put("children", childrenIds);
         if (caption != null && !caption.trim().isEmpty()) {
-            body.add("caption", caption);
+            body.put("caption", caption);
         }
-        body.add("access_token", instagramConfig.getAccessToken());
+        body.put("access_token", instagramConfig.getAccessToken());
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
         try {
             ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
             Map<String, Object> responseBody = response.getBody();
             return responseBody != null && responseBody.get("id") != null ? responseBody.get("id").toString() : null;
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            System.out.println("Error creating parent carousel container (" + e.getStatusCode() + "): " + e.getResponseBodyAsString());
+            return null;
         } catch (Exception e) {
             System.out.println("Error creating parent carousel container: " + e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Publishes a deal to Instagram Story (Image or Video).
+     */
+    public boolean publishStory(Deal deal) {
+        if (deal == null) return false;
+        String storyUrl = deal.getImage();
+        try {
+            if (videoGenerationService != null) {
+                videoGenerationService.createPostImage(deal);
+                boolean isLocalServer = serverBaseUrl == null || serverBaseUrl.contains("localhost") || serverBaseUrl.contains("127.0.0.1");
+                if (!isLocalServer) {
+                    storyUrl = serverBaseUrl + "/video/image/stream";
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ Could not pre-generate story image with price overlay: " + e.getMessage());
+        }
+        String imageUrl = getProxiedImageUrl(storyUrl);
+        return publishStoryMedia(imageUrl, "IMAGE");
+    }
+
+    /**
+     * Publishes specified media (image or video URL) to Instagram Story via Meta Graph API.
+     */
+    public boolean publishStoryMedia(String mediaUrl, String mediaType) {
+        System.out.println("Starting Instagram Story upload for media: " + mediaUrl);
+        try {
+            String url = "https://graph.facebook.com/v23.0/" + instagramConfig.getBusinessId() + "/media";
+
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("media_type", "STORIES");
+            if ("VIDEO".equalsIgnoreCase(mediaType)) {
+                body.put("video_url", mediaUrl);
+            } else {
+                body.put("image_url", mediaUrl);
+            }
+            body.put("access_token", instagramConfig.getAccessToken());
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+
+            Map<String, Object> responseBody = response.getBody();
+            if (responseBody == null || responseBody.get("id") == null) {
+                System.out.println("❌ Failed to create Instagram Story media container");
+                return false;
+            }
+
+            String creationId = responseBody.get("id").toString();
+            System.out.println("Instagram Story Creation ID: " + creationId);
+
+            if ("VIDEO".equalsIgnoreCase(mediaType)) {
+                boolean ready = waitForMediaContainerProcessing(creationId);
+                if (!ready) {
+                    System.out.println("Story video processing timed out or failed on Meta servers.");
+                    return false;
+                }
+            }
+
+            boolean published = publishMedia(creationId);
+            if (published) {
+                System.out.println("✅ Instagram Story published successfully!");
+            } else {
+                System.out.println("❌ Instagram Story publish failed.");
+            }
+            return published;
+
+        } catch (Exception e) {
+            System.out.println("❌ Instagram Story Error: " + e.getMessage());
+            return false;
         }
     }
 }
