@@ -137,18 +137,30 @@ public class CarouselService {
      */
     public String buildCarouselCaption(ProductCategory category, List<Deal> deals) {
         StringBuilder sb = new StringBuilder();
-        sb.append("🔥 <b>TOP ").append(deals.size()).append(" ").append(category.name()).append(" DEALS CAROUSEL</b> 🔥\n\n");
+        String catName = (category != null && category != ProductCategory.DEFAULT) ? category.name() : "AMAZON";
+        sb.append("🔥 TOP ").append(deals.size()).append(" ").append(catName).append(" DEALS 🔥\n\n");
+        sb.append("Swipe ➡️ to see all deals with huge price drops!\n\n");
 
         int index = 1;
         for (Deal deal : deals) {
-            sb.append("<b>").append(index).append(". ").append(deal.getTitle()).append("</b>\n");
-            sb.append("💰 Price: ₹").append(deal.getPrice()).append("\n");
-            sb.append("🔗 Link: <a href=\"").append(deal.getLink()).append("\">Buy Here</a>\n\n");
+            int discount = deal.calculateDiscountPercent();
+            sb.append(index).append(". ").append(deal.getTitle()).append("\n");
+            sb.append("💰 Deal Price: ₹").append(deal.getPrice());
+            if (deal.getMrp() != null && !deal.getMrp().trim().isEmpty() && !deal.getMrp().equalsIgnoreCase("N/A")) {
+                sb.append(" (MRP: ₹").append(deal.getMrp()).append(")");
+            }
+            if (discount > 0) {
+                sb.append(" • ").append(discount).append("% OFF");
+            }
+            sb.append("\n\n");
             index++;
             if (index > 10) break;
         }
 
-        String hashtags = hashtagService.getHashTags(category);
+        sb.append("👇 Comment \"LINK\" and we will DM you the direct purchase links!\n\n");
+        sb.append("❤️ Follow @offerzone2538 for daily curated top deals!\n\n");
+
+        String hashtags = hashtagService.getHashTags(category, !deals.isEmpty() ? deals.get(0).getTitle() : "");
         sb.append(hashtags);
 
         return sb.toString();

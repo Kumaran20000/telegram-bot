@@ -288,8 +288,12 @@ public class FacebookPageService {
     /**
      * Publishes a Video Reel to Facebook Page via Meta Graph API.
      */
+    public boolean publishReel(Deal deal) {
+        return publishReel(deal, null);
+    }
+
     public boolean publishReel(Deal deal, String videoUrl) {
-        if (!facebookConfig.isEnabled()) return false;
+        if (!facebookConfig.isEnabled() || deal == null) return false;
         String pageId = facebookConfig.getPageId();
         String rawToken = facebookConfig.getEffectivePageAccessToken(instagramConfig.getAccessToken());
         if (pageId == null || pageId.trim().isEmpty() || rawToken == null || rawToken.trim().isEmpty()) {
@@ -299,24 +303,52 @@ public class FacebookPageService {
         String pageAccessToken = getPageAccessToken(pageId, rawToken);
         String caption = messageFormatterService.formatFacebookPost(deal);
 
+        java.io.File videoFile = new java.io.File("generated/reel.mp4");
         String url = "https://graph.facebook.com/v23.0/" + pageId + "/videos";
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("file_url", videoUrl);
-        body.add("description", caption);
-        body.add("access_token", pageAccessToken);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        // Strategy 1: Direct Multipart File Upload (Works locally without needing public tunnels!)
+        if (videoFile.exists() && videoFile.length() > 0) {
+            try {
+                System.out.println("🚀 Uploading Facebook Reel video directly via Multipart Form Data (" + (videoFile.length() / 1024) + " KB)...");
+                MultiValueMap<String, Object> multipartBody = new LinkedMultiValueMap<>();
+                multipartBody.add("source", new org.springframework.core.io.FileSystemResource(videoFile));
+                multipartBody.add("description", caption);
+                multipartBody.add("access_token", pageAccessToken);
 
-        try {
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, new HttpEntity<>(body, headers), Map.class);
-            if (response.getBody() != null && response.getBody().get("id") != null) {
-                System.out.println("✅ Facebook Page Video Reel published successfully! Video ID: " + response.getBody().get("id"));
-                return true;
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, new HttpEntity<>(multipartBody, headers), Map.class);
+                if (response.getBody() != null && response.getBody().get("id") != null) {
+                    System.out.println("✅ Facebook Page Video Reel published successfully! Video ID: " + response.getBody().get("id"));
+                    return true;
+                }
+            } catch (Exception e) {
+                System.out.println("⚠️ Direct Facebook Multipart upload failed: " + e.getMessage() + ", falling back to URL upload...");
             }
-        } catch (Exception e) {
-            System.out.println("❌ Facebook Video Reel Error: " + e.getMessage());
         }
+
+        // Strategy 2: URL-based upload
+        if (videoUrl != null && !videoUrl.contains("localhost") && !videoUrl.contains("127.0.0.1")) {
+            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+            body.add("file_url", videoUrl);
+            body.add("description", caption);
+            body.add("access_token", pageAccessToken);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+            try {
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, new HttpEntity<>(body, headers), Map.class);
+                if (response.getBody() != null && response.getBody().get("id") != null) {
+                    System.out.println("✅ Facebook Page Video Reel published successfully! Video ID: " + response.getBody().get("id"));
+                    return true;
+                }
+            } catch (Exception e) {
+                System.out.println("❌ Facebook Video Reel Error: " + e.getMessage());
+            }
+        }
+
         return false;
     }
 

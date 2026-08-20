@@ -90,8 +90,19 @@ This document captures the current implementation status and complete workflow f
   - `GET /api/deals/facebook-token-status`: Checks whether the configured Facebook Page Access Token is valid or expired.
   - `GET /api/deals/schedule-status`: Checks live daily social schedule metrics (Reels: 2/day, Carousel: 1/day, Stories: 4/day).
   - `POST /api/deals/post-reel`: Triggers an Offer Reel publication to Facebook & Instagram on demand.
-  - `POST /api/deals/post-story`: Triggers an Offer Story publication to Facebook & Instagram on demand.
+  - `GET /api/deals/youtube-shorts-package/top`: Automatically picks top-scored deal, generates 1080x1920 video, and returns full YouTube Shorts upload package.
+  - `GET /api/deals/youtube-shorts-format`: Formats YouTube Shorts Title, Description, Tags, and Pinned Comment.
+  - `GET /api/deals/whatsapp-format`: Formats deal message using native WhatsApp markdown (`*bold*`, `~strike~`, direct buy link, and Telegram invite).
+  - `GET /api/deals/growth-blueprint`: Returns the multi-platform growth blueprint, profile templates, and posting rules.
+  - `GET /api/deals/trending-audio`: Lists catalog of upbeat (120–135 BPM) Instagram Reels trending tracks.
+  - `GET /api/deals/trending-audio/recommend?title=...`: Returns recommended trending track, BPM, and Instagram Reels library search query.
+  - `POST /api/deals/schedule/trigger-reel`: Manually triggers an instant Offer Reel publication.
+  - `POST /api/deals/schedule/trigger-carousel`: Manually triggers an instant Category Carousel publication.
+  - `POST /api/deals/instagram-sheet/post-carousel?group=...`: Publishes a clean non-HTML grouped carousel from the dedicated Instagram sheet tab.
+  - `POST /api/deals/instagram-sheet/post-reel`: Publishes the next pending reel from the dedicated Instagram sheet tab.
   - `GET /api/deals/ranked`: Returns all available deals in Google Sheet ranked by Deal Score with score breakdown.
+
+*For complete multi-platform publishing and growth strategies, see [`MULTI_PLATFORM_GROWTH_WORKFLOW.md`](file:///home/sudhakar/Kumaran/telegram-bot/MULTI_PLATFORM_GROWTH_WORKFLOW.md).*
 
 
 

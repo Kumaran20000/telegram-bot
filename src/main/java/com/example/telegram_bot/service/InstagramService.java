@@ -12,6 +12,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.File;
 import java.util.Map;
 
 @Service
@@ -155,37 +156,114 @@ public class InstagramService {
         }
     }
 
+    public boolean publishReel(Deal deal) {
+        return publishReel(deal, null);
+    }
+
     // Method to publish an Instagram Reel (Video)
     public boolean publishReel(Deal deal, String videoUrl) {
-        System.out.println("Starting Instagram Reel upload...");
+        System.out.println("🎬 Starting Instagram Reel publish workflow...");
         try {
-            String creationId = createReelMediaContainer(deal, videoUrl);
+            File reelFile = new File("generated/reel.mp4");
+            if (!reelFile.exists() || reelFile.length() == 0) {
+                System.out.println("Generating Reel video for deal: " + deal.getTitle());
+                if (videoGenerationService != null) {
+                    videoGenerationService.createReel(deal);
+                }
+                reelFile = new File("generated/reel.mp4");
+            }
+
+            String creationId = null;
+
+            // Strategy 1: Direct Resumable Upload (Works from localhost & cloud without public tunnels!)
+            if (reelFile.exists() && reelFile.length() > 0) {
+                System.out.println("🚀 Attempting Direct Resumable Upload of video bytes to Meta (" + (reelFile.length() / 1024) + " KB)...");
+                creationId = createReelViaDirectUpload(deal, reelFile);
+            }
+
+            // Strategy 2: URL-based container creation (if public URL is provided and direct upload did not succeed)
+            if (creationId == null && videoUrl != null && !videoUrl.contains("localhost") && !videoUrl.contains("127.0.0.1")) {
+                System.out.println("Attempting URL-based Reel Container Creation via URL: " + videoUrl);
+                creationId = createReelMediaContainer(deal, videoUrl);
+            }
+
             if (creationId == null) {
-                System.out.println("Failed to create Instagram Reel container");
+                System.out.println("❌ Failed to create Instagram Reel container via direct upload or URL.");
                 return false;
             }
 
-            System.out.println("Reel Creation ID: " + creationId);
+            System.out.println("Reel Creation ID: " + creationId + ". Waiting for Meta video processing...");
 
             // Wait for video processing on Meta servers
             boolean ready = waitForMediaContainerProcessing(creationId);
             if (!ready) {
-                System.out.println("Reel video processing timed out or failed on Meta servers.");
+                System.out.println("❌ Reel video processing timed out or failed on Meta servers.");
                 return false;
             }
 
             boolean published = publishMedia(creationId);
             if (published) {
-                System.out.println("Instagram Reel published successfully");
+                System.out.println("✅ Instagram Reel published successfully!");
             } else {
-                System.out.println("Instagram Reel publish failed");
+                System.out.println("❌ Instagram Reel publish failed.");
             }
             return published;
 
         } catch (Exception e) {
-            System.out.println("Instagram Reel Error: " + e.getMessage());
+            System.out.println("❌ Instagram Reel Error: " + e.getMessage());
             e.printStackTrace();
             return false;
+        }
+    }
+
+    // Direct Resumable Video Upload to Meta Graph API for Instagram Reels
+    public String createReelViaDirectUpload(Deal deal, File videoFile) {
+        try {
+            String url = "https://graph.facebook.com/v23.0/" + instagramConfig.getBusinessId() + "/media";
+
+            // Step 1: Initialize Resumable Upload Container
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("media_type", "REELS");
+            body.put("upload_type", "resumable");
+            body.put("caption", captionService.createCaption(deal));
+            body.put("access_token", instagramConfig.getAccessToken());
+
+            HttpHeaders initHeaders = new HttpHeaders();
+            initHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Map<String, Object>> initRequest = new HttpEntity<>(body, initHeaders);
+            ResponseEntity<Map> initResponse = restTemplate.postForEntity(url, initRequest, Map.class);
+
+            if (initResponse.getBody() == null || initResponse.getBody().get("id") == null) {
+                System.out.println("❌ Failed to initiate Instagram Reel upload session");
+                return null;
+            }
+
+            String creationId = initResponse.getBody().get("id").toString();
+            String uploadUri = initResponse.getBody().get("uri") != null 
+                    ? initResponse.getBody().get("uri").toString() 
+                    : "https://rupload.facebook.com/ig-video-upload/" + creationId;
+
+            System.out.println("Initiated Resumable Reel Upload Session [Creation ID: " + creationId + "]");
+
+            // Step 2: Stream video bytes directly to Meta rupload endpoint
+            byte[] videoBytes = java.nio.file.Files.readAllBytes(videoFile.toPath());
+
+            HttpHeaders uploadHeaders = new HttpHeaders();
+            uploadHeaders.set("Authorization", "OAuth " + instagramConfig.getAccessToken());
+            uploadHeaders.set("offset", "0");
+            uploadHeaders.set("file_size", String.valueOf(videoBytes.length));
+            uploadHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+
+            HttpEntity<byte[]> uploadRequest = new HttpEntity<>(videoBytes, uploadHeaders);
+            ResponseEntity<Map> uploadResponse = restTemplate.postForEntity(uploadUri, uploadRequest, Map.class);
+
+            System.out.println("Direct Video Bytes Uploaded to Meta: Status " + uploadResponse.getStatusCode());
+            return creationId;
+
+        } catch (Exception e) {
+            System.out.println("⚠️ Direct Resumable Reel Upload Warning: " + e.getMessage());
+            return null;
         }
     }
 
@@ -217,7 +295,7 @@ public class InstagramService {
         }
     }
 
-    // Create Instagram Reel (Video) media container
+    // Create Instagram Reel (Video) media container via URL
     private String createReelMediaContainer(Deal deal, String videoUrl) {
         String url = "https://graph.facebook.com/v23.0/" + instagramConfig.getBusinessId() + "/media";
 
@@ -431,30 +509,46 @@ public class InstagramService {
     }
 
     /**
-     * Publishes a deal to Instagram Story (Image or Video).
+     * Publishes a deal to Instagram Story (Image or Video) with affiliate URL link sticker & reliable fallback.
      */
     public boolean publishStory(Deal deal) {
         if (deal == null) return false;
-        String storyUrl = deal.getImage();
-        try {
-            if (videoGenerationService != null) {
-                videoGenerationService.createPostImage(deal);
-                boolean isLocalServer = serverBaseUrl == null || serverBaseUrl.contains("localhost") || serverBaseUrl.contains("127.0.0.1");
-                if (!isLocalServer) {
-                    storyUrl = serverBaseUrl + "/video/image/stream";
+        String affiliateLink = deal.getLink();
+
+        boolean isLocalOrInvalidServer = serverBaseUrl == null 
+                || serverBaseUrl.contains("localhost") 
+                || serverBaseUrl.contains("127.0.0.1") 
+                || serverBaseUrl.contains("a1b2c3d4") 
+                || serverBaseUrl.contains("example.com");
+
+        if (!isLocalOrInvalidServer) {
+            try {
+                if (videoGenerationService != null) {
+                    videoGenerationService.createPostImage(deal);
                 }
+                String formattedImageUrl = serverBaseUrl + "/video/image/stream";
+                System.out.println("Attempting Story upload with Price & Offer Price overlay: " + formattedImageUrl);
+                boolean success = publishStoryMedia(formattedImageUrl, "IMAGE", affiliateLink);
+                if (success) return true;
+            } catch (Exception e) {
+                System.out.println("⚠️ Warning during Story custom image upload: " + e.getMessage());
             }
-        } catch (Exception e) {
-            System.out.println("⚠️ Could not pre-generate story image with price overlay: " + e.getMessage());
         }
-        String imageUrl = getProxiedImageUrl(storyUrl);
-        return publishStoryMedia(imageUrl, "IMAGE");
+
+        // Always fallback to direct product image (proxied through wsrv.nl)
+        System.out.println("Attempting Story post with product image fallback: " + deal.getImage());
+        String imageUrl = getProxiedImageUrl(deal.getImage());
+        return publishStoryMedia(imageUrl, "IMAGE", affiliateLink);
+    }
+
+    public boolean publishStoryMedia(String mediaUrl, String mediaType) {
+        return publishStoryMedia(mediaUrl, mediaType, null);
     }
 
     /**
-     * Publishes specified media (image or video URL) to Instagram Story via Meta Graph API.
+     * Publishes specified media (image or video URL) to Instagram Story via Meta Graph API with optional link sticker.
      */
-    public boolean publishStoryMedia(String mediaUrl, String mediaType) {
+    public boolean publishStoryMedia(String mediaUrl, String mediaType, String linkUrl) {
         System.out.println("Starting Instagram Story upload for media: " + mediaUrl);
         try {
             String url = "https://graph.facebook.com/v23.0/" + instagramConfig.getBusinessId() + "/media";
@@ -468,13 +562,34 @@ public class InstagramService {
             }
             body.put("access_token", instagramConfig.getAccessToken());
 
+            if (linkUrl != null && !linkUrl.trim().isEmpty()) {
+                Map<String, String> sticker = new java.util.HashMap<>();
+                sticker.put("url", linkUrl.trim());
+                body.put("link_sticker", sticker);
+                System.out.println("🔗 Attaching Affiliate Link Sticker to Instagram Story: " + linkUrl);
+            }
+
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+            ResponseEntity<Map> response = null;
 
-            Map<String, Object> responseBody = response.getBody();
+            try {
+                response = restTemplate.postForEntity(url, request, Map.class);
+            } catch (Exception stickerErr) {
+                // If link_sticker is not supported for this account type, retry gracefully without it
+                if (body.containsKey("link_sticker")) {
+                    System.out.println("ℹ️ Account does not support API link_sticker parameter, retrying standard story...");
+                    body.remove("link_sticker");
+                    request = new HttpEntity<>(body, headers);
+                    response = restTemplate.postForEntity(url, request, Map.class);
+                } else {
+                    throw stickerErr;
+                }
+            }
+
+            Map<String, Object> responseBody = response != null ? response.getBody() : null;
             if (responseBody == null || responseBody.get("id") == null) {
                 System.out.println("❌ Failed to create Instagram Story media container");
                 return false;

@@ -29,6 +29,7 @@ public class SocialMediaScheduleScheduler {
     private final VideoGenerationService videoGenerationService;
     private final TelegramService telegramService;
     private final com.example.telegram_bot.service.DealScoreService dealScoreService;
+    private final com.example.telegram_bot.service.YouTubeService youtubeService;
 
     @Value("${app.server.base-url:http://localhost:8080}")
     private String serverBaseUrl;
@@ -40,6 +41,7 @@ public class SocialMediaScheduleScheduler {
     private final AtomicInteger dailyStoriesCount = new AtomicInteger(0);
     private final AtomicInteger dailyReelsCount = new AtomicInteger(0);
     private final AtomicInteger dailyCarouselCount = new AtomicInteger(0);
+    private final AtomicInteger dailyShortsCount = new AtomicInteger(0);
     private final AtomicInteger reelFormatPointer = new AtomicInteger(0);
     private LocalDateTime lastRunTime;
 
@@ -53,7 +55,8 @@ public class SocialMediaScheduleScheduler {
             CarouselService carouselService,
             VideoGenerationService videoGenerationService,
             TelegramService telegramService,
-            com.example.telegram_bot.service.DealScoreService dealScoreService) {
+            com.example.telegram_bot.service.DealScoreService dealScoreService,
+            com.example.telegram_bot.service.YouTubeService youtubeService) {
         this.googleSheetService = googleSheetService;
         this.instagramService = instagramService;
         this.facebookPageService = facebookPageService;
@@ -61,6 +64,7 @@ public class SocialMediaScheduleScheduler {
         this.videoGenerationService = videoGenerationService;
         this.telegramService = telegramService;
         this.dealScoreService = dealScoreService;
+        this.youtubeService = youtubeService;
     }
 
     // ==========================================
@@ -71,12 +75,14 @@ public class SocialMediaScheduleScheduler {
 
     @Scheduled(cron = "${social.schedule.reels.cron1:0 30 11 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
     public void executeReelSlot1() {
+        if (!scheduleEnabled) return;
         System.out.println("🎬 [Schedule] Triggering Daily Reel Slot 1 (11:30 AM IST)...");
         triggerReelPosting("Slot 1 (11:30 AM)");
     }
 
     @Scheduled(cron = "${social.schedule.reels.cron2:0 30 19 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
     public void executeReelSlot2() {
+        if (!scheduleEnabled) return;
         System.out.println("🎬 [Schedule] Triggering Daily Reel Slot 2 (07:30 PM IST)...");
         triggerReelPosting("Slot 2 (07:30 PM)");
     }
@@ -88,6 +94,7 @@ public class SocialMediaScheduleScheduler {
 
     @Scheduled(cron = "${social.schedule.carousel.cron:0 0 15 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
     public void executeCarouselSlot() {
+        if (!scheduleEnabled) return;
         System.out.println("🖼️ [Schedule] Triggering Daily Carousel Post (03:00 PM IST)...");
         triggerCarouselPosting("03:00 PM");
     }
@@ -104,38 +111,54 @@ public class SocialMediaScheduleScheduler {
 
     @Scheduled(cron = "${social.schedule.stories.cron1:0 0 9 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
     public void executeStorySlot1() {
+        if (!scheduleEnabled) return;
         System.out.println("📱 [Schedule] Triggering Daily Story Slot 1 (09:00 AM IST)...");
         triggerStoryPosting("Slot 1 (09:00 AM)");
     }
 
     @Scheduled(cron = "${social.schedule.stories.cron2:0 30 11 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
     public void executeStorySlot2() {
+        if (!scheduleEnabled) return;
         System.out.println("📱 [Schedule] Triggering Daily Story Slot 2 (11:30 AM IST)...");
         triggerStoryPosting("Slot 2 (11:30 AM)");
     }
 
     @Scheduled(cron = "${social.schedule.stories.cron3:0 0 14 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
     public void executeStorySlot3() {
+        if (!scheduleEnabled) return;
         System.out.println("📱 [Schedule] Triggering Daily Story Slot 3 (02:00 PM IST)...");
         triggerStoryPosting("Slot 3 (02:00 PM)");
     }
 
     @Scheduled(cron = "${social.schedule.stories.cron4:0 30 16 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
     public void executeStorySlot4() {
+        if (!scheduleEnabled) return;
         System.out.println("📱 [Schedule] Triggering Daily Story Slot 4 (04:30 PM IST)...");
         triggerStoryPosting("Slot 4 (04:30 PM)");
     }
 
     @Scheduled(cron = "${social.schedule.stories.cron5:0 30 19 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
     public void executeStorySlot5() {
+        if (!scheduleEnabled) return;
         System.out.println("📱 [Schedule] Triggering Daily Story Slot 5 (07:30 PM IST)...");
         triggerStoryPosting("Slot 5 (07:30 PM)");
     }
 
     @Scheduled(cron = "${social.schedule.stories.cron6:0 30 21 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
     public void executeStorySlot6() {
+        if (!scheduleEnabled) return;
         System.out.println("📱 [Schedule] Triggering Daily Story Slot 6 (09:30 PM IST)...");
         triggerStoryPosting("Slot 6 (09:30 PM)");
+    }
+
+    // ==========================================
+    // 4. YOUTUBE SHORTS (1 per day - 01:30 PM IST Lunch Window)
+    // ==========================================
+    @Scheduled(cron = "${social.schedule.youtube.cron:0 30 13 * * ?}", zone = "${social.schedule.zone:Asia/Kolkata}")
+    public void executeYouTubeShortSlot() {
+        if (!scheduleEnabled) return;
+        System.out.println("🔴 [Schedule] Triggering Daily YouTube Short (01:30 PM IST)...");
+        triggerYouTubeShortPosting("01:30 PM");
     }
 
     // Reset daily counters at Midnight IST
@@ -144,6 +167,7 @@ public class SocialMediaScheduleScheduler {
         dailyStoriesCount.set(0);
         dailyReelsCount.set(0);
         dailyCarouselCount.set(0);
+        dailyShortsCount.set(0);
         System.out.println("🔄 Daily social schedule metrics reset for new day.");
     }
 
@@ -152,11 +176,6 @@ public class SocialMediaScheduleScheduler {
     // ==========================================
 
     public boolean triggerReelPosting(String slotLabel) {
-        if (!scheduleEnabled) {
-            System.out.println("Social Schedule is disabled.");
-            return false;
-        }
-
         this.lastRunTime = LocalDateTime.now();
         try {
             Deal deal = getNextDealForPosting();
@@ -195,7 +214,6 @@ public class SocialMediaScheduleScheduler {
     }
 
     public boolean triggerCarouselPosting(String slotLabel) {
-        if (!scheduleEnabled) return false;
         this.lastRunTime = LocalDateTime.now();
 
         try {
@@ -245,7 +263,6 @@ public class SocialMediaScheduleScheduler {
     }
 
     public boolean triggerStoryPosting(String slotLabel) {
-        if (!scheduleEnabled) return false;
         this.lastRunTime = LocalDateTime.now();
 
         try {
@@ -280,6 +297,37 @@ public class SocialMediaScheduleScheduler {
             e.printStackTrace();
         }
         return false;
+    }
+
+    public Map<String, Object> triggerYouTubeShortPosting(String slotLabel) {
+        this.lastRunTime = LocalDateTime.now();
+        try {
+            Map<String, Object> uploadResult = youtubeService.uploadTopDealShortAutomatically();
+            String status = (String) uploadResult.getOrDefault("status", "UNKNOWN");
+            if ("SUCCESS".equalsIgnoreCase(status)) {
+                dailyShortsCount.incrementAndGet();
+                String shortsUrl = (String) uploadResult.get("shortsUrl");
+                String dealTitle = (String) uploadResult.get("dealTitle");
+                System.out.println("✅ [Schedule] YouTube Short posted: " + shortsUrl);
+                telegramService.sendAdminNotification(
+                        "🎬 <b>YouTube Short Published (" + slotLabel + ")</b>\n\n" +
+                        "📦 <b>Deal:</b> " + dealTitle + "\n" +
+                        "🔗 <b>Watch:</b> <a href=\"" + shortsUrl + "\">" + shortsUrl + "</a>\n" +
+                        "📌 <b>Affiliate Comment:</b> " + (Boolean.TRUE.equals(uploadResult.get("affiliateCommentPosted")) ? "✅ Added" : "⚠️ Skipped"));
+            } else if ("DISABLED".equalsIgnoreCase(status)) {
+                System.out.println("ℹ️ [Schedule] YouTube auto-upload skipped: " + uploadResult.get("message"));
+            } else {
+                System.err.println("⚠️ [Schedule] YouTube Short upload failed: " + uploadResult);
+            }
+            return uploadResult;
+        } catch (Exception e) {
+            System.err.println("❌ [Schedule] YouTube Short scheduling error: " + e.getMessage());
+            telegramService.sendAdminNotification("⚠️ <b>YouTube Short Auto-Upload Error:</b> " + e.getMessage());
+            Map<String, Object> error = new HashMap<>();
+            error.put("status", "ERROR");
+            error.put("message", e.getMessage());
+            return error;
+        }
     }
 
     private Deal getNextDealForPosting() {
@@ -328,18 +376,21 @@ public class SocialMediaScheduleScheduler {
         metrics.put("scheduleEnabled", scheduleEnabled);
         metrics.put("dailyTarget", Map.of(
                 "reelsPerDay", "2 (Rotates 5 Dynamic Hook Formats)",
+                "youtubeShortsPerDay", "1 (Auto-upload + Pinned Affiliate Link)",
                 "carouselPostsPerDay", "0-1 (Category Focus)",
                 "storiesPerDay", "5-10 (Configured: 6/day)",
                 "staticPostsPerDay", "0-1 (Loot Deals >=60% OFF)"
         ));
         metrics.put("todayCompleted", Map.of(
                 "reels", dailyReelsCount.get(),
+                "youtubeShorts", dailyShortsCount.get(),
                 "carousels", dailyCarouselCount.get(),
                 "stories", dailyStoriesCount.get()
         ));
         metrics.put("lastExecutionTime", lastRunTime != null ? lastRunTime.toString() : "N/A");
         metrics.put("scheduleSlots", Map.of(
                 "reels", List.of("11:30 AM IST", "07:30 PM IST"),
+                "youtubeShorts", List.of("01:30 PM IST"),
                 "carousel", List.of("03:00 PM IST"),
                 "stories", List.of("09:00 AM IST", "11:30 AM IST", "02:00 PM IST", "04:30 PM IST", "07:30 PM IST", "09:30 PM IST")
         ));

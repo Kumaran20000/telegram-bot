@@ -177,7 +177,7 @@ public class MessageFormatterService {
      */
     public String formatFacebookPost(Deal deal) {
         ProductCategory category = categoryService.detectCategory(deal.getTitle());
-        String hashtags = hashtagService.getHashTags(category);
+        String hashtags = hashtagService.getFacebookHashTags(category, deal.getTitle());
         String categoryEmoji = getCategoryEmoji(category);
         String storeName = (deal.getSource() != null && !deal.getSource().trim().isEmpty()) ? deal.getSource() : "Amazon";
         int discount = deal.calculateDiscountPercent();
@@ -216,7 +216,7 @@ public class MessageFormatterService {
      */
     public String formatInstagramCaption(Deal deal, int templateIndex) {
         ProductCategory category = categoryService.detectCategory(deal.getTitle());
-        String hashtags = hashtagService.getHashTags(category, deal.getTitle());
+        String hashtags = hashtagService.getHashTags(category, deal.getTitle(), deal.getPrice(), deal.getMrp(), deal.getDiscount());
         String categoryEmoji = getCategoryEmoji(category);
         int discount = deal.calculateDiscountPercent();
         long savings = deal.calculateSavingsAmount();
@@ -378,16 +378,102 @@ public class MessageFormatterService {
             case LAPTOP: return "💻";
             case TV: return "📺";
             case HEADPHONE: return "🎧";
+            case SPEAKER: return "🔊";
+            case CAMERA: return "📷";
             case SHOE: return "👟";
             case SHIRT: return "👔";
             case DRESS: return "👗";
             case KITCHEN: return "🍳";
             case HOME: return "🏠";
             case BEAUTY: return "💄";
+            case HEALTH: return "💪";
+            case SPORTS: return "⚽";
             case BOOK: return "📚";
             case TOY: return "🧸";
             default: return "🛒";
         }
+    }
+
+    /**
+     * Formats a high-converting deal message for WhatsApp Channels and WhatsApp broadcast lists.
+     * Uses WhatsApp markdown (*bold*, ~strikethrough~, _italic_).
+     */
+    public String formatWhatsAppMessage(Deal deal) {
+        ProductCategory category = categoryService.detectCategory(deal.getTitle());
+        String categoryEmoji = getCategoryEmoji(category);
+        int discount = deal.calculateDiscountPercent();
+        long savings = deal.calculateSavingsAmount();
+        String price = deal.getPrice() != null ? deal.getPrice() : "N/A";
+        String mrp = deal.getMrp();
+        boolean hasMrp = mrp != null && !mrp.isEmpty() && !mrp.equalsIgnoreCase("N/A");
+
+        StringBuilder sb = new StringBuilder();
+        if (discount >= 50) {
+            sb.append("🔥 *LOOT DEAL OF THE DAY!* 🔥\n\n");
+        } else {
+            sb.append("⚡ *PRICE DROP ALERT!* ⚡\n\n");
+        }
+
+        sb.append(categoryEmoji).append(" *").append(deal.getTitle()).append("*\n\n");
+        sb.append("💰 *Deal Price:* ₹*").append(price).append("*\n");
+        if (hasMrp) {
+            sb.append("❌ *MRP:* ~₹").append(mrp).append("~\n");
+        }
+        if (discount > 0) {
+            sb.append("🎉 *Discount:* *").append(discount).append("% OFF*");
+            if (savings > 0) {
+                sb.append(" (Save ₹").append(String.format("%,d", savings)).append(")");
+            }
+            sb.append("\n");
+        }
+        sb.append("\n");
+        if (deal.getLink() != null && !deal.getLink().trim().isEmpty()) {
+            sb.append("🛒 *BUY NOW ON AMAZON:* 👇\n");
+            sb.append(deal.getLink()).append("\n\n");
+        }
+        sb.append("⚡ _Prices change quickly, grab it before deal expires!_\n\n");
+        sb.append("📲 *Join our Telegram for instant price glitch alerts:* https://t.me/BOnlinediscount");
+
+        return sb.toString();
+    }
+
+    /**
+     * Formats metadata (SEO Title, Description, Pinned Comment) for YouTube Shorts repurposing.
+     */
+    public java.util.Map<String, String> formatYouTubeShortsMetadata(Deal deal) {
+        int discount = deal.calculateDiscountPercent();
+        String title = deal.getTitle() != null ? deal.getTitle() : "Special Deal";
+        if (title.length() > 50) {
+            title = title.substring(0, 50) + "...";
+        }
+
+        String videoTitle = (discount > 0 ? "🔥 " + discount + "% OFF! " : "⚡ UNBOXING DEAL: ") + title + " #shorts #deals #amazonfinds";
+        if (videoTitle.length() > 95) {
+            videoTitle = videoTitle.substring(0, 95);
+        }
+
+        StringBuilder desc = new StringBuilder();
+        desc.append(deal.getTitle()).append("\n\n");
+        desc.append("💰 Special Price: ₹").append(deal.getPrice());
+        if (deal.getMrp() != null && !deal.getMrp().equalsIgnoreCase("N/A")) {
+            desc.append(" (MRP: ₹").append(deal.getMrp()).append(")");
+        }
+        if (discount > 0) {
+            desc.append(" • ").append(discount).append("% OFF");
+        }
+        desc.append("\n\n");
+        desc.append("🛒 BUY DIRECT ON AMAZON: ").append(deal.getLink()).append("\n\n");
+        desc.append("⚡ Join our Telegram for daily 80% OFF loot deals: https://t.me/BOnlinediscount\n");
+        desc.append("❤️ Subscribe for daily Amazon secret price drop finds!\n\n");
+        desc.append("#amazonfinds #deals #techdeals #shopping #budgetbuy #unboxing");
+
+        String pinnedComment = "🛒 Direct Purchase Link: " + deal.getLink() + "\n⚡ Join our Telegram for instant 80% OFF alerts: https://t.me/BOnlinediscount";
+
+        java.util.Map<String, String> result = new java.util.LinkedHashMap<>();
+        result.put("title", videoTitle);
+        result.put("description", desc.toString());
+        result.put("pinnedComment", pinnedComment);
+        return result;
     }
 
     private String escapeHtml(String input) {

@@ -379,23 +379,20 @@ public class GoogleSheetService {
                 System.out.println(">>>>>>>> PROCESSING INSTAGRAM REEL <<<<<<<<");
                 boolean instagramPosted = false;
 
-                // Pre-generate 9:16 video reel with dynamic hook rotation for this deal
                 try {
                     videoGenerationService.createReel(deal);
+                    String videoUrl = (serverBaseUrl != null && !serverBaseUrl.contains("localhost") && !serverBaseUrl.contains("127.0.0.1")) 
+                            ? serverBaseUrl + "/video/stream" 
+                            : null;
+                    instagramPosted = instagramService.publishReel(deal, videoUrl);
                 } catch (Exception e) {
-                    System.out.println("⚠️ Warning: Could not pre-generate reel for deal: " + e.getMessage());
+                    System.out.println("⚠️ Warning during Reel generation: " + e.getMessage());
                 }
 
-                boolean isLocalServer = serverBaseUrl.contains("localhost") || serverBaseUrl.contains("127.0.0.1");
-
-                if (isLocalServer) {
-                    System.out.println("⚠️ WARNING: 'app.server.base-url' is set to localhost (" + serverBaseUrl + ").");
-                    System.out.println("⚠️ Meta/Instagram Graph API CANNOT access localhost URLs!");
-                    System.out.println("⚠️ Run 'npx localtunnel --port 8080' or set 'app.server.base-url' to your public HTTPS URL to publish Reels.");
-                } else {
-                    String videoUrl = serverBaseUrl + "/video/stream";
-                    System.out.println("Attempting Instagram Reel post via Video URL: " + videoUrl);
-                    instagramPosted = instagramService.publishReel(deal, videoUrl);
+                // Robust fallback: publish photo feed post if Reel failed
+                if (!instagramPosted) {
+                    System.out.println("Attempting Instagram Photo Feed post fallback...");
+                    instagramPosted = instagramService.publish(deal);
                 }
 
                 if (instagramPosted) {
@@ -403,8 +400,8 @@ public class GoogleSheetService {
                 } else {
                     updateInstagramStatus(rowIndex, "FAILED");
                     telegramService.sendAdminNotification(
-                            "⚠️ <b>Posting Alert (Instagram Reel)</b>\n\n" +
-                            "Failed to publish Reel to Instagram at Row <b>" + rowIndex + "</b>:\n" +
+                            "⚠️ <b>Posting Alert (Instagram)</b>\n\n" +
+                            "Failed to publish to Instagram at Row <b>" + rowIndex + "</b>:\n" +
                             "🛒 <i>" + deal.getTitle() + "</i>"
                     );
                 }
